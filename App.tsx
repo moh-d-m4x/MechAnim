@@ -1,16 +1,16 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Canvas } from './components/Canvas';
 import { Controls, OptimizationOptions } from './components/Controls';
+import { TrackingModal } from './components/TrackingModal';
 import { GlobalConfig, MechanismConfig, Point, MechanismType } from './types';
-import { evaluateFitness, mutateConfig, generateSmartConfig, getBounds } from './utils/optimizer';
+import { evaluateFitness, mutateConfig, generateSmartConfig, getBounds, localRefine5bar } from './utils/optimizer';
 import { generateCurvePoints } from './utils/kinematics';
 import { generateSVG, generateDXF } from './utils/exporter';
 import { Info, X } from 'lucide-react';
 
 const App: React.FC = () => {
     const initialId = 'mech-1';
-    
+
     // Initial Configuration with one 4-bar
     const [config, setConfig] = useState<GlobalConfig>({
         speed: 1,
@@ -31,69 +31,70 @@ const App: React.FC = () => {
 
     const [selectedId, setSelectedId] = useState<string | null>(initialId);
     const [angle, setAngle] = useState(0);
-    
-    const [presets, setPresets] = useState<{name: string, conf: GlobalConfig}[]>([
-        { 
-            name: "Two-Gear Drawing Machine", 
-            conf: { 
-                speed: 1, 
-                mechanisms: [{ 
-                    id: 'p_geared', 
-                    type: '5bar', 
-                    visible: true, 
+
+    const [presets, setPresets] = useState<{ name: string, conf: GlobalConfig }[]>([
+        {
+            name: "Two-Gear Drawing Machine",
+            conf: {
+                speed: 1,
+                mechanisms: [{
+                    id: 'p_geared',
+                    type: '5bar',
+                    visible: true,
                     color: '#eab308', // Brass/Gold
-                    groundLength: 120, 
-                    crankLength: 60, 
+                    groundLength: 120,
+                    crankLength: 60,
                     rockerLength: 40, // Secondary gear radius
-                    couplerLength: 180, 
+                    couplerLength: 180,
                     rodLength: 100, // Secondary arm
-                    sliderOffset: 0, 
+                    sliderOffset: 0,
                     couplerPointDist: 100, // Extension
                     couplerPointAngle: 0,
                     speed1: 1,
                     speed2: 1.5
-                }] 
-            } 
+                }]
+            }
         },
-        { 
-            name: "Crank-Rocker", 
-            conf: { 
-                speed: 1, 
-                mechanisms: [{ id: 'p1', type: '4bar', visible: true, color: '#3b82f6', groundLength: 180, crankLength: 50, couplerLength: 180, rockerLength: 120, sliderOffset: 0, couplerPointDist: 80, couplerPointAngle: 45 }] 
-            } 
+        {
+            name: "Crank-Rocker",
+            conf: {
+                speed: 1,
+                mechanisms: [{ id: 'p1', type: '4bar', visible: true, color: '#3b82f6', groundLength: 180, crankLength: 50, couplerLength: 180, rockerLength: 120, sliderOffset: 0, couplerPointDist: 80, couplerPointAngle: 45 }]
+            }
         },
-        { 
-            name: "Piston Pusher", 
-            conf: { 
-                speed: 1, 
-                mechanisms: [{ id: 'p2', type: 'piston', visible: true, color: '#10b981', groundLength: 0, crankLength: 60, couplerLength: 160, rockerLength: 0, sliderOffset: 40, couplerPointDist: 0, couplerPointAngle: 0 }] 
-            } 
+        {
+            name: "Piston Pusher",
+            conf: {
+                speed: 1,
+                mechanisms: [{ id: 'p2', type: 'piston', visible: true, color: '#10b981', groundLength: 0, crankLength: 60, couplerLength: 160, rockerLength: 0, sliderOffset: 40, couplerPointDist: 0, couplerPointAngle: 0 }]
+            }
         },
-        { 
-            name: "Scotch Yoke", 
-            conf: { 
-                speed: 1, 
-                mechanisms: [{ id: 'p3', type: 'yoke', visible: true, color: '#f59e0b', groundLength: 0, crankLength: 50, couplerLength: 0, rockerLength: 0, sliderOffset: 0, couplerPointDist: 50, couplerPointAngle: 0 }] 
-            } 
+        {
+            name: "Scotch Yoke",
+            conf: {
+                speed: 1,
+                mechanisms: [{ id: 'p3', type: 'yoke', visible: true, color: '#f59e0b', groundLength: 0, crankLength: 50, couplerLength: 0, rockerLength: 0, sliderOffset: 0, couplerPointDist: 50, couplerPointAngle: 0 }]
+            }
         }
     ]);
 
     const [isPlaying, setIsPlaying] = useState(true);
     const [showTrace, setShowTrace] = useState(true);
-    
+
     // New States for Drawing & AI
     const [isDrawMode, setIsDrawMode] = useState(false);
     const [userPath, setUserPath] = useState<Point[]>([]);
     const [isOptimizing, setIsOptimizing] = useState(false);
-    const [optDuration, setOptDuration] = useState(0); 
-    
+    const [optDuration, setOptDuration] = useState(0);
+
     const [showHelp, setShowHelp] = useState(false);
+    const [showTrackingModal, setShowTrackingModal] = useState(false);
     const requestRef = useRef<number | null>(null);
 
     // Animation Loop
     const animate = (time: number) => {
         if (isPlaying && !isDrawMode && !isOptimizing) {
-            setAngle(prev => (prev + config.speed * 0.05) % (Math.PI * 16)); 
+            setAngle(prev => (prev + config.speed * 0.05) % (Math.PI * 16));
         }
         requestRef.current = requestAnimationFrame(animate);
     };
@@ -128,7 +129,7 @@ const App: React.FC = () => {
         link.click();
         document.body.removeChild(link);
     };
-    
+
     const runOptimization = async (options: OptimizationOptions = {}) => {
         if (userPath.length < 3) {
             alert("Please draw a path first!");
@@ -141,7 +142,7 @@ const App: React.FC = () => {
 
         setIsOptimizing(true);
         setIsPlaying(false);
-        
+
         const { forcedType, excludeCurrent, seedMechanism } = options;
         const targetMechIndex = config.mechanisms.findIndex(m => m.id === selectedId);
         if (targetMechIndex === -1) {
@@ -156,9 +157,9 @@ const App: React.FC = () => {
         // --- PRE-OPTIMIZATION: MONTE CARLO SEARCH ---
         const PRE_COMPUTE_SIZE = 2000;
         const POPULATION_SIZE = 100;
-        
+
         let initialCandidates: MechanismConfig[] = [];
-        
+
         // 1. Add User Seed / Preset with MASSIVE FREEDOM
         if (seedMechanism) {
             const bounds = userPath.length > 0 ? getBounds(userPath) : { cx: 0, cy: 0, w: 200, h: 200 };
@@ -167,8 +168,8 @@ const App: React.FC = () => {
             // Generate 500 variations of the preset placed RANDOMLY around the canvas
             for (let i = 0; i < 500; i++) {
                 const cand = { ...seedMechanism, id: Math.random().toString(36).substr(2, 9) };
-                
-                cand.anchorX = bounds.cx + (Math.random() - 0.5) * pathSize * 4.0; 
+
+                cand.anchorX = bounds.cx + (Math.random() - 0.5) * pathSize * 4.0;
                 cand.anchorY = bounds.cy + (Math.random() - 0.5) * pathSize * 4.0;
                 cand.groundAngle = Math.random() * 360;
 
@@ -189,13 +190,20 @@ const App: React.FC = () => {
                     const minArm = (cand.groundLength + cand.crankLength + cand.rockerLength) * 0.6;
                     cand.couplerLength = Math.max(cand.couplerLength, minArm);
                     cand.rodLength = Math.max(cand.rodLength || 100, minArm);
+
+                    // PRESERVE the original speed ratios - they are the "recipe" for the curve shape
+                    if (seedMechanism.speed1 !== undefined) cand.speed1 = seedMechanism.speed1;
+                    if (seedMechanism.speed2 !== undefined) cand.speed2 = seedMechanism.speed2;
+
+                    // But vary the phase to explore different orientations of the same curve
+                    cand.phase = (seedMechanism.phase ?? 0) + (Math.random() - 0.5) * Math.PI;
                 }
 
                 initialCandidates.push(cand);
             }
         } else if (!excludeCurrent && !isTypeMismatch) {
             initialCandidates.push(seedMech);
-             for(let i=0; i<20; i++) {
+            for (let i = 0; i < 20; i++) {
                 initialCandidates.push(mutateConfig(seedMech, 0.5, !!forcedType));
             }
         }
@@ -208,18 +216,18 @@ const App: React.FC = () => {
             mech: m,
             score: evaluateFitness(m, userPath)
         }));
-        
+
         const validCandidates = scoredCandidates.filter(s => s.score < 1e8);
         const poolSource = validCandidates.length > 0 ? validCandidates : scoredCandidates;
-        
+
         poolSource.sort((a, b) => a.score - b.score);
-        
+
         let population: MechanismConfig[] = poolSource.slice(0, POPULATION_SIZE).map(s => s.mech);
-        
-        while(population.length < POPULATION_SIZE) {
-             population.push(generateSmartConfig(userPath, forcedType, excludedType));
+
+        while (population.length < POPULATION_SIZE) {
+            population.push(generateSmartConfig(userPath, forcedType, excludedType));
         }
-        
+
         let globalBest = population[0];
         let globalBestScore = evaluateFitness(globalBest, userPath);
 
@@ -241,27 +249,27 @@ const App: React.FC = () => {
                 mech: m,
                 score: evaluateFitness(m, userPath)
             }));
-            
+
             scored.sort((a, b) => a.score - b.score);
-            
+
             const bestOfGen = scored[0].mech;
             const bestGenScore = scored[0].score;
-            
+
             if (bestGenScore < globalBestScore) {
                 globalBestScore = bestGenScore;
                 globalBest = bestOfGen;
             }
-            
+
             setConfig(prev => ({
                 ...prev,
                 mechanisms: prev.mechanisms.map((m, i) => i === targetMechIndex ? { ...bestOfGen, id: seedMech.id, color: seedMech.color } : m)
             }));
-            
+
             const nextGen: MechanismConfig[] = [];
-            for(let i = 0; i < POPULATION_SIZE * 0.15; i++) nextGen.push(scored[i].mech);
-            
+            for (let i = 0; i < POPULATION_SIZE * 0.15; i++) nextGen.push(scored[i].mech);
+
             const survivors = scored.slice(0, POPULATION_SIZE / 2);
-            
+
             while (nextGen.length < POPULATION_SIZE) {
                 if (Math.random() < 0.10) {
                     nextGen.push(generateSmartConfig(userPath, forcedType, excludedType));
@@ -274,11 +282,16 @@ const App: React.FC = () => {
                     nextGen.push(mutateConfig(parent, temperature, !!forcedType, excludedType));
                 }
             }
-            
+
             population = nextGen;
             generation++;
-            
+
             await new Promise(r => setTimeout(r, 10));
+        }
+
+        // Local gradient refinement for 5-bar mechanisms
+        if (globalBest.type === '5bar') {
+            globalBest = localRefine5bar(globalBest, userPath, 30);
         }
 
         setConfig(prev => ({
@@ -298,7 +311,7 @@ const App: React.FC = () => {
     };
 
     const loadPreset = (newConf: GlobalConfig) => {
-        const freshMechs = newConf.mechanisms.map(m => ({...m, id: Math.random().toString(36).substr(2, 9)}));
+        const freshMechs = newConf.mechanisms.map(m => ({ ...m, id: Math.random().toString(36).substr(2, 9) }));
         setConfig({ ...newConf, mechanisms: freshMechs });
         if (freshMechs.length > 0) setSelectedId(freshMechs[0].id);
     };
@@ -306,9 +319,9 @@ const App: React.FC = () => {
     return (
         <div className="flex h-screen w-screen overflow-hidden bg-slate-200 font-sans">
             <div className="w-80 flex-shrink-0 h-full z-20 relative">
-                <Controls 
-                    config={config} 
-                    setConfig={setConfig} 
+                <Controls
+                    config={config}
+                    setConfig={setConfig}
                     selectedId={selectedId}
                     setSelectedId={setSelectedId}
                     isPlaying={isPlaying}
@@ -327,19 +340,20 @@ const App: React.FC = () => {
                     setOptimizationDuration={setOptDuration}
                     onExportSVG={handleExportSVG}
                     onExportDXF={handleExportDXF}
+                    onOpenTracking={() => setShowTrackingModal(true)}
                 />
             </div>
 
             <main className="flex-1 flex flex-col h-full relative shadow-inner">
                 <div className="absolute top-4 right-4 z-20 flex flex-col items-end gap-2">
-                    <button 
+                    <button
                         onClick={() => setShowHelp(!showHelp)}
                         className="w-8 h-8 flex items-center justify-center bg-white rounded-full shadow-md border border-slate-300 hover:bg-slate-50 text-slate-600 transition-colors"
                         title="Visual Editor Help"
                     >
                         {showHelp ? <X size={16} /> : <Info size={16} />}
                     </button>
-                    
+
                     {showHelp && (
                         <div className="bg-white/90 backdrop-blur p-4 rounded-xl border border-slate-300 shadow-lg max-w-xs select-none animate-in fade-in slide-in-from-top-2 duration-200">
                             <h3 className="font-bold text-slate-800 text-sm mb-2">Editor Instructions</h3>
@@ -364,15 +378,15 @@ const App: React.FC = () => {
                         </div>
                     )}
                 </div>
-                
+
                 <div className="flex-1 p-0 md:p-4 flex items-center justify-center overflow-hidden bg-slate-300/50">
-                   <div className="w-full h-full max-w-6xl max-h-[900px] transition-all duration-300">
-                        <Canvas 
-                            config={config} 
+                    <div className="w-full h-full max-w-6xl max-h-[900px] transition-all duration-300">
+                        <Canvas
+                            config={config}
                             setConfig={setConfig}
                             selectedId={selectedId}
                             setSelectedId={setSelectedId}
-                            isPlaying={isPlaying} 
+                            isPlaying={isPlaying}
                             showTrace={showTrace}
                             isDrawMode={isDrawMode}
                             userPath={userPath}
@@ -380,9 +394,20 @@ const App: React.FC = () => {
                             angle={angle}
                             setAngle={setAngle}
                         />
-                   </div>
+                    </div>
                 </div>
             </main>
+
+            {/* Tracking Modal */}
+            <TrackingModal
+                isOpen={showTrackingModal}
+                onClose={() => setShowTrackingModal(false)}
+                onTransfer={(path) => {
+                    // Transfer tracked path to userPath for optimization
+                    setUserPath(path);
+                    setShowTrackingModal(false);
+                }}
+            />
         </div>
     );
 };

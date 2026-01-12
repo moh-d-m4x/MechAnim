@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { GlobalConfig, MechanismConfig, MechanismType } from '../types';
-import { Play, Pause, RefreshCw, Info, MousePointer2, Pencil, Sparkles, Trash2, Save, ChevronRight, ChevronDown, Gauge, Component, MoveHorizontal, Settings2, Plus, Route, Timer, Download, FileJson, ListTree } from 'lucide-react';
+import { Play, Pause, RefreshCw, Info, MousePointer2, Pencil, Sparkles, Trash2, Save, ChevronRight, ChevronDown, Gauge, Component, MoveHorizontal, Settings2, Plus, Route, Timer, Download, FileJson, ListTree, Crosshair } from 'lucide-react';
 
 interface Preset {
     name: string;
@@ -35,6 +35,7 @@ interface ControlsProps {
     setOptimizationDuration: (val: number) => void;
     onExportSVG: () => void;
     onExportDXF: () => void;
+    onOpenTracking?: () => void;
 }
 
 const Slider: React.FC<{
@@ -46,12 +47,12 @@ const Slider: React.FC<{
     unit?: string;
     disabled?: boolean;
     step?: number;
-}> = ({ label, value, min, max, onChange, unit, disabled, step=1 }) => (
+}> = ({ label, value, min, max, onChange, unit, disabled, step = 1 }) => (
     <div className={`mb-4 relative z-0 ${disabled ? 'opacity-50' : ''}`}>
         <div className="flex justify-between mb-1 items-center">
             <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">{label}</label>
             <div className="flex items-center">
-                <input 
+                <input
                     type="number"
                     value={parseFloat(value.toFixed(step < 1 ? 2 : 0))}
                     step={step}
@@ -75,20 +76,20 @@ const Slider: React.FC<{
             value={value}
             onChange={(e) => onChange(Number(e.target.value))}
             disabled={disabled}
-            className="w-full h-8 cursor-pointer relative z-10" 
+            className="w-full h-8 cursor-pointer relative z-10"
         />
     </div>
 );
 
-export const Controls: React.FC<ControlsProps> = ({ 
-    config, setConfig, selectedId, setSelectedId, isPlaying, setIsPlaying, 
+export const Controls: React.FC<ControlsProps> = ({
+    config, setConfig, selectedId, setSelectedId, isPlaying, setIsPlaying,
     showTrace, setShowTrace, isDrawMode, toggleDrawMode,
     clearUserPath, onOptimize, isOptimizing,
     presets, onSavePreset, onLoadPreset,
     optimizationDuration, setOptimizationDuration,
-    onExportSVG, onExportDXF
+    onExportSVG, onExportDXF, onOpenTracking
 }) => {
-    
+
     const [optimizingTarget, setOptimizingTarget] = useState<'path' | 'shape' | null>(null);
     const [optDropdownOpen, setOptDropdownOpen] = useState(false);
     const [optPresetOpen, setOptPresetOpen] = useState(false);
@@ -133,9 +134,9 @@ export const Controls: React.FC<ControlsProps> = ({
         if (presetConf.mechanisms.length > 0) {
             const mech = presetConf.mechanisms[0];
             setOptimizingTarget('shape');
-            onOptimize({ 
+            onOptimize({
                 forcedType: mech.type,
-                seedMechanism: mech 
+                seedMechanism: mech
             });
         }
     };
@@ -158,14 +159,24 @@ export const Controls: React.FC<ControlsProps> = ({
             </div>
 
             <div className="p-5 border-b border-slate-200 bg-slate-100/50 flex-shrink-0 relative z-20">
+                {/* Tracking Button */}
+                {onOpenTracking && (
+                    <button
+                        onClick={onOpenTracking}
+                        className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-sm font-bold bg-purple-600 text-white border border-purple-700 shadow-sm hover:bg-purple-500 transition-all mb-3"
+                    >
+                        <Crosshair size={14} />
+                        Tracking
+                    </button>
+                )}
+
                 <div className="grid grid-cols-2 gap-2 mb-3">
                     <button
                         onClick={toggleDrawMode}
-                        className={`flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-sm font-bold border shadow-sm transition-all ${
-                            isDrawMode 
-                            ? 'bg-indigo-600 text-white border-indigo-700 ring-2 ring-indigo-200' 
-                            : 'bg-white text-slate-700 border-slate-300 hover:border-indigo-300 hover:text-indigo-600'
-                        }`}
+                        className={`flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-sm font-bold border shadow-sm transition-all ${isDrawMode
+                                ? 'bg-indigo-600 text-white border-indigo-700 ring-2 ring-indigo-200'
+                                : 'bg-white text-slate-700 border-slate-300 hover:border-indigo-300 hover:text-indigo-600'
+                            }`}
                     >
                         <Pencil size={14} />
                         {isDrawMode ? 'Done' : 'Draw'}
@@ -183,19 +194,18 @@ export const Controls: React.FC<ControlsProps> = ({
                     <button
                         onClick={() => setOptDropdownOpen(!optDropdownOpen)}
                         disabled={isOptimizing || !selectedId}
-                        className={`w-full flex items-center justify-between gap-2 py-3 px-4 rounded-lg text-sm font-bold text-white shadow-sm transition-all active:scale-95 border-b-2 ${
-                            isOptimizing || !selectedId
-                            ? 'bg-slate-300 border-slate-400 text-slate-500 cursor-not-allowed' 
-                            : 'bg-indigo-600 border-indigo-800 hover:bg-indigo-700'
-                        }`}
+                        className={`w-full flex items-center justify-between gap-2 py-3 px-4 rounded-lg text-sm font-bold text-white shadow-sm transition-all active:scale-95 border-b-2 ${isOptimizing || !selectedId
+                                ? 'bg-slate-300 border-slate-400 text-slate-500 cursor-not-allowed'
+                                : 'bg-indigo-600 border-indigo-800 hover:bg-indigo-700'
+                            }`}
                     >
                         <div className="flex items-center gap-2">
-                             {isOptimizing ? <RefreshCw size={16} className="animate-spin" /> : <Sparkles size={16} />}
-                             <span>{isOptimizing ? (optimizingTarget === 'path' ? 'Refining...' : 'Searching...') : 'AI Design Optimizer'}</span>
+                            {isOptimizing ? <RefreshCw size={16} className="animate-spin" /> : <Sparkles size={16} />}
+                            <span>{isOptimizing ? (optimizingTarget === 'path' ? 'Refining...' : 'Searching...') : 'AI Design Optimizer'}</span>
                         </div>
                         <ChevronDown size={16} className={`transition-transform ${optDropdownOpen ? 'rotate-180' : ''}`} />
                     </button>
-                    
+
                     {optDropdownOpen && !isOptimizing && (
                         <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-lg shadow-xl border border-slate-200 overflow-hidden p-1 animate-in fade-in slide-in-from-top-2 max-h-[400px] overflow-y-auto">
                             <button
@@ -213,7 +223,7 @@ export const Controls: React.FC<ControlsProps> = ({
                                     <div className="text-[10px] font-normal text-slate-400">Refine current mechanism parameters</div>
                                 </div>
                             </button>
-                            
+
                             <button
                                 onClick={() => {
                                     setOptDropdownOpen(false);
@@ -269,7 +279,7 @@ export const Controls: React.FC<ControlsProps> = ({
                                     <span className="text-[9px] text-slate-400 font-mono">{optimizationDuration > 0 ? `${optimizationDuration}s` : 'Auto'}</span>
                                 </div>
                                 <div className="flex items-center gap-2">
-                                     <div className="relative flex-1">
+                                    <div className="relative flex-1">
                                         <input
                                             type="number"
                                             min="0"
@@ -279,7 +289,7 @@ export const Controls: React.FC<ControlsProps> = ({
                                             className="w-full pl-7 pr-2 py-1 text-xs font-mono text-slate-700 bg-slate-50 border border-slate-200 rounded focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
                                             placeholder="0"
                                         />
-                                        <Timer size={10} className="absolute left-2 top-1.5 text-slate-400 pointer-events-none"/>
+                                        <Timer size={10} className="absolute left-2 top-1.5 text-slate-400 pointer-events-none" />
                                     </div>
                                 </div>
                             </div>
@@ -289,37 +299,36 @@ export const Controls: React.FC<ControlsProps> = ({
             </div>
 
             <div className="p-5 space-y-6 bg-slate-50 flex-1 min-h-0 overflow-y-auto relative z-0">
-                
+
                 {/* Global Controls */}
                 <div className="flex flex-col gap-3">
-                     <button
+                    <button
                         onClick={() => setIsPlaying(!isPlaying)}
-                        className={`w-full flex items-center justify-center gap-2 py-2 px-4 rounded-md font-bold text-sm border shadow-sm transition-all ${
-                            isPlaying 
-                            ? 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100' 
-                            : 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100'
-                        }`}
+                        className={`w-full flex items-center justify-center gap-2 py-2 px-4 rounded-md font-bold text-sm border shadow-sm transition-all ${isPlaying
+                                ? 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100'
+                                : 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100'
+                            }`}
                     >
                         {isPlaying ? <Pause size={16} /> : <Play size={16} />}
                         {isPlaying ? 'Pause' : 'Play'}
                     </button>
 
-                    <Slider 
-                        label="Simulation Speed" 
-                        value={config.speed} 
-                        min={-3} 
-                        max={3} 
+                    <Slider
+                        label="Simulation Speed"
+                        value={config.speed}
+                        min={-3}
+                        max={3}
                         step={0.1}
                         onChange={(v) => setConfig(prev => ({ ...prev, speed: v }))}
                     />
 
                     <label className="flex items-center justify-between p-2 rounded border border-slate-200 bg-white cursor-pointer hover:bg-slate-50 transition-colors">
                         <span className="text-sm font-medium text-slate-700">Show Path Trace</span>
-                        <input 
-                            type="checkbox" 
-                            checked={showTrace} 
+                        <input
+                            type="checkbox"
+                            checked={showTrace}
                             onChange={e => setShowTrace(e.target.checked)}
-                            className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-gray-300" 
+                            className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-gray-300"
                         />
                     </label>
                 </div>
@@ -328,13 +337,13 @@ export const Controls: React.FC<ControlsProps> = ({
                 <div>
                     <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Export Design</h3>
                     <div className="grid grid-cols-2 gap-2">
-                        <button 
+                        <button
                             onClick={onExportSVG}
                             className="flex items-center justify-center gap-2 py-2 px-3 rounded bg-white border border-slate-300 text-slate-700 text-xs font-bold hover:border-indigo-300 hover:text-indigo-600 transition-all shadow-sm"
                         >
                             <Download size={14} /> SVG
                         </button>
-                        <button 
+                        <button
                             onClick={onExportDXF}
                             className="flex items-center justify-center gap-2 py-2 px-3 rounded bg-white border border-slate-300 text-slate-700 text-xs font-bold hover:border-indigo-300 hover:text-indigo-600 transition-all shadow-sm"
                         >
@@ -351,11 +360,10 @@ export const Controls: React.FC<ControlsProps> = ({
                             <button
                                 key={m.id}
                                 onClick={() => setSelectedId(m.id)}
-                                className={`px-3 py-1.5 rounded-md text-xs font-bold border transition-colors flex items-center gap-2 ${
-                                    selectedId === m.id
-                                    ? 'bg-white border-indigo-400 text-indigo-700 shadow-sm ring-1 ring-indigo-100'
-                                    : 'bg-slate-100 border-slate-200 text-slate-500 hover:bg-slate-200'
-                                }`}
+                                className={`px-3 py-1.5 rounded-md text-xs font-bold border transition-colors flex items-center gap-2 ${selectedId === m.id
+                                        ? 'bg-white border-indigo-400 text-indigo-700 shadow-sm ring-1 ring-indigo-100'
+                                        : 'bg-slate-100 border-slate-200 text-slate-500 hover:bg-slate-200'
+                                    }`}
                             >
                                 <div className="w-2 h-2 rounded-full" style={{ backgroundColor: m.color }}></div>
                                 {m.type === '5bar' ? '5-Bar' : (m.type === 'crank' ? 'Gear' : m.type)}
@@ -373,15 +381,15 @@ export const Controls: React.FC<ControlsProps> = ({
                                 {getMechLabel(activeMech.type)}
                             </span>
                         </div>
-                        
-                        <Slider 
-                            label={activeMech.type === '5bar' ? "Left Gear Radius" : "Crank Radius"} 
-                            value={activeMech.crankLength} 
-                            min={10} 
-                            max={200} 
-                            onChange={(v) => updateActiveMech({ crankLength: v })} 
+
+                        <Slider
+                            label={activeMech.type === '5bar' ? "Left Gear Radius" : "Crank Radius"}
+                            value={activeMech.crankLength}
+                            min={10}
+                            max={200}
+                            onChange={(v) => updateActiveMech({ crankLength: v })}
                         />
-                        
+
                         {activeMech.type === '4bar' && (
                             <>
                                 <Slider label="Linkage Bar" value={activeMech.couplerLength} min={20} max={300} onChange={(v) => updateActiveMech({ couplerLength: v })} />
@@ -396,39 +404,39 @@ export const Controls: React.FC<ControlsProps> = ({
                                 <Slider label="Gear Spacing" value={activeMech.groundLength} min={50} max={400} onChange={(v) => updateActiveMech({ groundLength: v })} />
                                 <Slider label="Primary Arm" value={activeMech.couplerLength} min={50} max={300} onChange={(v) => updateActiveMech({ couplerLength: v })} />
                                 <Slider label="Secondary Arm" value={activeMech.rodLength || 100} min={50} max={300} onChange={(v) => updateActiveMech({ rodLength: v })} />
-                                
+
                                 <div className="mt-2 pt-2 border-t border-slate-100">
                                     <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Phase Offset</div>
-                                    <Slider 
-                                        label="Phase Angle" 
-                                        value={(activeMech.phase || 0) * 180 / Math.PI} 
-                                        min={0} 
-                                        max={360} 
+                                    <Slider
+                                        label="Phase Angle"
+                                        value={(activeMech.phase || 0) * 180 / Math.PI}
+                                        min={0}
+                                        max={360}
                                         unit="°"
-                                        onChange={(v) => updateActiveMech({ phase: v * Math.PI / 180 })} 
+                                        onChange={(v) => updateActiveMech({ phase: v * Math.PI / 180 })}
                                     />
                                 </div>
 
                                 <div className="grid grid-cols-2 gap-4 mt-2 pt-2 border-t border-slate-100">
                                     <div className="col-span-2 text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Gear Speeds</div>
                                     <div className="-mb-4">
-                                        <Slider 
-                                            label="Left" 
-                                            value={activeMech.speed1 ?? 1} 
-                                            min={-4} 
-                                            max={4} 
-                                            step={0.1} 
-                                            onChange={(v) => updateActiveMech({ speed1: v })} 
+                                        <Slider
+                                            label="Left"
+                                            value={activeMech.speed1 ?? 1}
+                                            min={-4}
+                                            max={4}
+                                            step={0.1}
+                                            onChange={(v) => updateActiveMech({ speed1: v })}
                                         />
                                     </div>
                                     <div className="-mb-4">
-                                        <Slider 
-                                            label="Right" 
-                                            value={activeMech.speed2 ?? 1} 
-                                            min={-4} 
-                                            max={4} 
-                                            step={0.1} 
-                                            onChange={(v) => updateActiveMech({ speed2: v })} 
+                                        <Slider
+                                            label="Right"
+                                            value={activeMech.speed2 ?? 1}
+                                            min={-4}
+                                            max={4}
+                                            step={0.1}
+                                            onChange={(v) => updateActiveMech({ speed2: v })}
                                         />
                                     </div>
                                 </div>
@@ -443,12 +451,12 @@ export const Controls: React.FC<ControlsProps> = ({
                         )}
 
                         {activeMech.type === 'yoke' && (
-                             <Slider 
-                                label="Track Offset" 
-                                value={activeMech.sliderOffset} 
-                                min={-activeMech.crankLength + 5} 
-                                max={activeMech.crankLength - 5} 
-                                onChange={(v) => updateActiveMech({ sliderOffset: v })} 
+                            <Slider
+                                label="Track Offset"
+                                value={activeMech.sliderOffset}
+                                min={-activeMech.crankLength + 5}
+                                max={activeMech.crankLength - 5}
+                                onChange={(v) => updateActiveMech({ sliderOffset: v })}
                             />
                         )}
 
@@ -459,33 +467,33 @@ export const Controls: React.FC<ControlsProps> = ({
                                 <Slider label="Slotted Arm" value={activeMech.rockerLength} min={50} max={400} onChange={(v) => updateActiveMech({ rockerLength: v })} />
                             </>
                         )}
-                        
+
                         {(activeMech.type === '4bar' || activeMech.type === 'quick-return') && (
                             <div className="pt-2 mt-2 border-t border-slate-100">
                                 <div className="flex items-center justify-between mb-3">
                                     <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Output Gear</span>
                                     <label className="relative inline-flex items-center cursor-pointer">
-                                        <input 
-                                            type="checkbox" 
-                                            checked={activeMech.showOutputGear || false} 
+                                        <input
+                                            type="checkbox"
+                                            checked={activeMech.showOutputGear || false}
                                             onChange={(e) => updateActiveMech({ showOutputGear: e.target.checked })}
-                                            className="sr-only peer" 
+                                            className="sr-only peer"
                                         />
                                         <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
                                     </label>
                                 </div>
                                 {activeMech.showOutputGear && (
-                                    <Slider 
-                                        label="Gear Radius" 
-                                        value={activeMech.outputGearRadius || 40} 
-                                        min={20} 
-                                        max={150} 
-                                        onChange={(v) => updateActiveMech({ outputGearRadius: v })} 
+                                    <Slider
+                                        label="Gear Radius"
+                                        value={activeMech.outputGearRadius || 40}
+                                        min={20}
+                                        max={150}
+                                        onChange={(v) => updateActiveMech({ outputGearRadius: v })}
                                     />
                                 )}
                             </div>
                         )}
-                        
+
                         {activeMech.type !== 'crank' && (
                             <div className="pt-2 mt-2 border-t border-slate-100">
                                 <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Extension</h3>
@@ -501,17 +509,17 @@ export const Controls: React.FC<ControlsProps> = ({
                         Select a part to edit
                     </div>
                 )}
-                
-                 <div className="pt-2 pb-10">
+
+                <div className="pt-2 pb-10">
                     <div className="flex items-center justify-between mb-3">
-                         <h3 className="text-sm font-bold text-slate-800">Presets</h3>
-                         <button onClick={onSavePreset} className="text-xs flex items-center gap-1 text-indigo-600 font-bold hover:underline">
+                        <h3 className="text-sm font-bold text-slate-800">Presets</h3>
+                        <button onClick={onSavePreset} className="text-xs flex items-center gap-1 text-indigo-600 font-bold hover:underline">
                             <Save size={12} /> Save
-                         </button>
+                        </button>
                     </div>
                     <div className="flex flex-col gap-2">
                         {presets.map((p, i) => (
-                            <button 
+                            <button
                                 key={i}
                                 onClick={() => onLoadPreset(p.conf)}
                                 className="flex items-center justify-between p-3 rounded-lg border border-slate-200 bg-white hover:border-indigo-300 hover:bg-indigo-50 transition-all group text-left"
