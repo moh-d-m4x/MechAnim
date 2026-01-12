@@ -36,6 +36,8 @@ interface ControlsProps {
     onExportSVG: () => void;
     onExportDXF: () => void;
     onOpenTracking?: () => void;
+    angle: number;  // Current animation angle in radians
+    setAngle: (val: number) => void;  // Set animation angle
 }
 
 const Slider: React.FC<{
@@ -81,13 +83,186 @@ const Slider: React.FC<{
     </div>
 );
 
+// Circular rotation dial component
+const CircularDial: React.FC<{
+    value: number;  // 0-360
+    onChange: (val: number) => void;
+    size?: number;
+}> = ({ value, onChange, size = 100 }) => {
+    const [isDragging, setIsDragging] = React.useState(false);
+    const dialRef = React.useRef<SVGSVGElement>(null);
+
+    const center = size / 2;
+    const radius = size * 0.35;
+    const arcRadius = size * 0.42;
+    const strokeWidth = size * 0.06;
+
+    // Convert angle to SVG arc coordinates
+    const polarToCartesian = (cx: number, cy: number, r: number, angleDeg: number) => {
+        const angleRad = (angleDeg - 90) * Math.PI / 180;
+        return {
+            x: cx + r * Math.cos(angleRad),
+            y: cy + r * Math.sin(angleRad)
+        };
+    };
+
+    // Create arc path
+    const describeArc = (x: number, y: number, r: number, startAngle: number, endAngle: number) => {
+        if (endAngle - startAngle >= 360) {
+            // Full circle
+            return `M ${x} ${y - r} A ${r} ${r} 0 1 1 ${x - 0.001} ${y - r}`;
+        }
+        const start = polarToCartesian(x, y, r, endAngle);
+        const end = polarToCartesian(x, y, r, startAngle);
+        const largeArcFlag = endAngle - startAngle <= 180 ? 0 : 1;
+        return `M ${start.x} ${start.y} A ${r} ${r} 0 ${largeArcFlag} 0 ${end.x} ${end.y}`;
+    };
+
+    // Update angle from mouse position (works with both React and native events)
+    const updateAngleFromPosition = (clientX: number, clientY: number) => {
+        if (!dialRef.current) return;
+        const rect = dialRef.current.getBoundingClientRect();
+        const x = clientX - rect.left - center;
+        const y = clientY - rect.top - center;
+        let angle = Math.atan2(y, x) * 180 / Math.PI + 90;
+        if (angle < 0) angle += 360;
+        onChange(Math.round(angle) % 360);
+    };
+
+    const handleMouseDown = (e: React.MouseEvent) => {
+        e.preventDefault();
+        setIsDragging(true);
+        updateAngleFromPosition(e.clientX, e.clientY);
+    };
+
+    // Handle document-level mouse events for smooth dragging outside the dial
+    React.useEffect(() => {
+        if (!isDragging) return;
+
+        const handleGlobalMouseMove = (e: MouseEvent) => {
+            updateAngleFromPosition(e.clientX, e.clientY);
+        };
+
+        const handleGlobalMouseUp = () => {
+            setIsDragging(false);
+        };
+
+        document.addEventListener('mousemove', handleGlobalMouseMove);
+        document.addEventListener('mouseup', handleGlobalMouseUp);
+
+        return () => {
+            document.removeEventListener('mousemove', handleGlobalMouseMove);
+            document.removeEventListener('mouseup', handleGlobalMouseUp);
+        };
+    }, [isDragging, center, onChange]);
+
+    // Knob position
+    const knobPos = polarToCartesian(center, center, radius * 0.7, value);
+
+    return (
+        <div className="flex flex-col items-center mb-4">
+            <label className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Rotation</label>
+            <div className="flex items-center">
+                {/* Quick buttons on left side as column */}
+                <div className="flex flex-col gap-1 mr-2">
+                    {[0, 90, 180, 270].map(ang => (
+                        <button
+                            key={ang}
+                            onClick={() => onChange(ang)}
+                            className={`px-2 py-1 text-xs font-medium rounded transition-colors ${Math.round(value) === ang
+                                ? 'bg-indigo-100 text-indigo-700 border border-indigo-200'
+                                : 'bg-slate-100 text-slate-500 hover:bg-slate-200 border border-slate-200'
+                                }`}
+                        >
+                            {ang}°
+                        </button>
+                    ))}
+                </div>
+                <svg
+                    ref={dialRef}
+                    width={size}
+                    height={size}
+                    onMouseDown={handleMouseDown}
+                    className="cursor-pointer select-none"
+                    style={{ touchAction: 'none' }}
+                >
+                    {/* Background circle */}
+                    <circle
+                        cx={center}
+                        cy={center}
+                        r={radius}
+                        fill="#f1f5f9"
+                        stroke="#e2e8f0"
+                        strokeWidth="2"
+                    />
+
+                    {/* Arc track (background) */}
+                    <circle
+                        cx={center}
+                        cy={center}
+                        r={arcRadius}
+                        fill="none"
+                        stroke="#e2e8f0"
+                        strokeWidth={strokeWidth}
+                        strokeLinecap="round"
+                    />
+
+                    {/* Arc progress (indigo color) */}
+                    {value > 0 && (
+                        <path
+                            d={describeArc(center, center, arcRadius, 0, value)}
+                            fill="none"
+                            stroke="#6366f1"
+                            strokeWidth={strokeWidth}
+                            strokeLinecap="round"
+                        />
+                    )}
+
+                    {/* Center display */}
+                    <circle
+                        cx={center}
+                        cy={center}
+                        r={radius * 0.65}
+                        fill="white"
+                        stroke="#e2e8f0"
+                        strokeWidth="1"
+                    />
+
+                    {/* Value text */}
+                    <text
+                        x={center}
+                        y={center + 4}
+                        textAnchor="middle"
+                        className="text-sm font-bold fill-slate-700"
+                        style={{ fontSize: size * 0.16 }}
+                    >
+                        {Math.round(value)}°
+                    </text>
+
+                    {/* Knob indicator */}
+                    <circle
+                        cx={knobPos.x}
+                        cy={knobPos.y}
+                        r={size * 0.06}
+                        fill="#6366f1"
+                        stroke="white"
+                        strokeWidth="2"
+                        className="drop-shadow-sm"
+                    />
+                </svg>
+            </div>
+        </div>
+    );
+};
+
 export const Controls: React.FC<ControlsProps> = ({
     config, setConfig, selectedId, setSelectedId, isPlaying, setIsPlaying,
     showTrace, setShowTrace, isDrawMode, toggleDrawMode,
     clearUserPath, onOptimize, isOptimizing,
     presets, onSavePreset, onLoadPreset,
     optimizationDuration, setOptimizationDuration,
-    onExportSVG, onExportDXF, onOpenTracking
+    onExportSVG, onExportDXF, onOpenTracking,
+    angle, setAngle
 }) => {
 
     const [optimizingTarget, setOptimizingTarget] = useState<'path' | 'shape' | null>(null);
@@ -174,8 +349,8 @@ export const Controls: React.FC<ControlsProps> = ({
                     <button
                         onClick={toggleDrawMode}
                         className={`flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-sm font-bold border shadow-sm transition-all ${isDrawMode
-                                ? 'bg-indigo-600 text-white border-indigo-700 ring-2 ring-indigo-200'
-                                : 'bg-white text-slate-700 border-slate-300 hover:border-indigo-300 hover:text-indigo-600'
+                            ? 'bg-indigo-600 text-white border-indigo-700 ring-2 ring-indigo-200'
+                            : 'bg-white text-slate-700 border-slate-300 hover:border-indigo-300 hover:text-indigo-600'
                             }`}
                     >
                         <Pencil size={14} />
@@ -195,13 +370,13 @@ export const Controls: React.FC<ControlsProps> = ({
                         onClick={() => setOptDropdownOpen(!optDropdownOpen)}
                         disabled={isOptimizing || !selectedId}
                         className={`w-full flex items-center justify-between gap-2 py-3 px-4 rounded-lg text-sm font-bold text-white shadow-sm transition-all active:scale-95 border-b-2 ${isOptimizing || !selectedId
-                                ? 'bg-slate-300 border-slate-400 text-slate-500 cursor-not-allowed'
-                                : 'bg-indigo-600 border-indigo-800 hover:bg-indigo-700'
+                            ? 'bg-slate-300 border-slate-400 text-slate-500 cursor-not-allowed'
+                            : 'bg-indigo-600 border-indigo-800 hover:bg-indigo-700'
                             }`}
                     >
                         <div className="flex items-center gap-2">
                             {isOptimizing ? <RefreshCw size={16} className="animate-spin" /> : <Sparkles size={16} />}
-                            <span>{isOptimizing ? (optimizingTarget === 'path' ? 'Refining...' : 'Searching...') : 'AI Design Optimizer'}</span>
+                            <span>{isOptimizing ? (optimizingTarget === 'path' ? 'Refining...' : 'Searching...') : 'Machine Optimizer'}</span>
                         </div>
                         <ChevronDown size={16} className={`transition-transform ${optDropdownOpen ? 'rotate-180' : ''}`} />
                     </button>
@@ -305,8 +480,8 @@ export const Controls: React.FC<ControlsProps> = ({
                     <button
                         onClick={() => setIsPlaying(!isPlaying)}
                         className={`w-full flex items-center justify-center gap-2 py-2 px-4 rounded-md font-bold text-sm border shadow-sm transition-all ${isPlaying
-                                ? 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100'
-                                : 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100'
+                            ? 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100'
+                            : 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100'
                             }`}
                     >
                         {isPlaying ? <Pause size={16} /> : <Play size={16} />}
@@ -320,6 +495,12 @@ export const Controls: React.FC<ControlsProps> = ({
                         max={3}
                         step={0.1}
                         onChange={(v) => setConfig(prev => ({ ...prev, speed: v }))}
+                    />
+
+                    <CircularDial
+                        value={((360 - angle * 180 / Math.PI + 90) % 360 + 360) % 360}
+                        onChange={(deg) => setAngle((360 - deg + 90) * Math.PI / 180)}
+                        size={140}
                     />
 
                     <label className="flex items-center justify-between p-2 rounded border border-slate-200 bg-white cursor-pointer hover:bg-slate-50 transition-colors">
@@ -361,8 +542,8 @@ export const Controls: React.FC<ControlsProps> = ({
                                 key={m.id}
                                 onClick={() => setSelectedId(m.id)}
                                 className={`px-3 py-1.5 rounded-md text-xs font-bold border transition-colors flex items-center gap-2 ${selectedId === m.id
-                                        ? 'bg-white border-indigo-400 text-indigo-700 shadow-sm ring-1 ring-indigo-100'
-                                        : 'bg-slate-100 border-slate-200 text-slate-500 hover:bg-slate-200'
+                                    ? 'bg-white border-indigo-400 text-indigo-700 shadow-sm ring-1 ring-indigo-100'
+                                    : 'bg-slate-100 border-slate-200 text-slate-500 hover:bg-slate-200'
                                     }`}
                             >
                                 <div className="w-2 h-2 rounded-full" style={{ backgroundColor: m.color }}></div>

@@ -112,9 +112,7 @@ async def track_video(request: TrackRequest):
                 init_frame=request.init_point.frame
             )
             
-            # Apply smoothing if requested
-            if request.smooth:
-                path = smooth_path(path, window_size=5)
+            # No smoothing for auto detection - return raw tracked path
             
             # Convert to response format
             path_points = [PathPoint(

@@ -45,17 +45,36 @@ const GearPath = ({ radius, teeth }: { radius: number, teeth: number }) => {
     return <path d={d} fillRule="evenodd" />;
 };
 
-export const Canvas: React.FC<CanvasProps> = ({ 
+export const Canvas: React.FC<CanvasProps> = ({
     config, setConfig, selectedId, setSelectedId, isPlaying, showTrace, isDrawMode, userPath, setUserPath, angle, setAngle
 }) => {
     const [traces, setTraces] = useState<Record<string, Point[]>>({});
     const svgRef = useRef<SVGSVGElement>(null);
-    
+
     const [viewOffset, setViewOffset] = useState({ x: 0, y: 0 });
     const [zoom, setZoom] = useState(1);
     const [isPanning, setIsPanning] = useState(false);
     const [isDrawing, setIsDrawing] = useState(false);
     const [dragTarget, setDragTarget] = useState<{ mechId: string, type: 'P1' | 'P2' | 'J1' | 'J2' | 'Effector' | 'Aux' } | null>(null);
+
+    // User path selection state
+    const [isPathSelected, setIsPathSelected] = useState(false);
+    const [pathDragAction, setPathDragAction] = useState<'move' | 'resize' | null>(null);
+    const [pathDragStart, setPathDragStart] = useState<Point | null>(null);
+    const [isHoveringPath, setIsHoveringPath] = useState(false);
+
+    // Calculate bounding box for userPath
+    const getPathBounds = () => {
+        if (userPath.length === 0) return null;
+        const xs = userPath.map(p => p.x);
+        const ys = userPath.map(p => p.y);
+        return {
+            minX: Math.min(...xs),
+            maxX: Math.max(...xs),
+            minY: Math.min(...ys),
+            maxY: Math.max(...ys)
+        };
+    };
 
     // Trace Logic
     useEffect(() => {
@@ -100,7 +119,7 @@ export const Canvas: React.FC<CanvasProps> = ({
         pt.x = clientX;
         pt.y = clientY;
         const svgP = pt.matrixTransform(svg.getScreenCTM()?.inverse());
-        
+
         const Tx = INITIAL_OFFSET_X + viewOffset.x;
         const Ty = INITIAL_OFFSET_Y + viewOffset.y;
 
@@ -116,10 +135,10 @@ export const Canvas: React.FC<CanvasProps> = ({
             mechanisms: prev.mechanisms.map(m => m.id === id ? { ...m, ...updates } : m)
         }));
     };
-    
+
     const handleWheel = (e: React.WheelEvent) => {
         if (!svgRef.current) return;
-        
+
         const zoomSensitivity = 0.001;
         const MIN_ZOOM = 0.1;
         const MAX_ZOOM = 10;
@@ -128,25 +147,25 @@ export const Canvas: React.FC<CanvasProps> = ({
         const delta = -e.deltaY;
         const scaleFactor = 1 + delta * zoomSensitivity;
         const newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom * scaleFactor));
-        
+
         // Calculate point under mouse in SVG ViewBox coordinates
         const pt = svgRef.current.createSVGPoint();
         pt.x = e.clientX;
         pt.y = e.clientY;
         const svgP = pt.matrixTransform(svgRef.current.getScreenCTM()?.inverse());
-        
+
         // Current transform params
         const Tx = INITIAL_OFFSET_X + viewOffset.x;
         const Ty = INITIAL_OFFSET_Y + viewOffset.y;
-        
+
         // Calculate World Point under mouse before zoom
         const wx = (svgP.x - Tx) / zoom;
         const wy = (Ty - svgP.y) / zoom;
-        
+
         // Calculate New Translation to keep World Point under mouse
         const newTx = svgP.x - wx * newZoom;
         const newTy = svgP.y + wy * newZoom;
-        
+
         setZoom(newZoom);
         setViewOffset({
             x: newTx - INITIAL_OFFSET_X,
@@ -163,6 +182,11 @@ export const Canvas: React.FC<CanvasProps> = ({
         const p = getWorldPoint(e);
         if (!p) return;
 
+        // Deselect path if clicking elsewhere
+        if (isPathSelected) {
+            setIsPathSelected(false);
+        }
+
         if (!isPlaying && !isDrawMode) {
             const HIT_RADIUS = 20 / zoom; // Adjust hit radius by zoom
             const dist = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
@@ -171,14 +195,14 @@ export const Canvas: React.FC<CanvasProps> = ({
             for (let i = config.mechanisms.length - 1; i >= 0; i--) {
                 const m = config.mechanisms[i];
                 const state = calculateLinkage(m, angle);
-                
+
                 // Check Effector
                 if (m.type !== 'crank' && dist(p, state.effector) < HIT_RADIUS) {
                     setDragTarget({ mechId: m.id, type: 'Effector' });
                     setSelectedId(m.id);
                     return;
                 }
-                
+
                 // Check Aux (Secondary Crank Tip for 5-bar)
                 if (m.type === '5bar' && state.aux && dist(p, state.aux) < HIT_RADIUS) {
                     setDragTarget({ mechId: m.id, type: 'Aux' });
@@ -198,30 +222,30 @@ export const Canvas: React.FC<CanvasProps> = ({
                     setSelectedId(m.id);
                     return;
                 }
-                
+
                 // Check P2 (Ground / Angle Handle / Secondary Gear)
                 let groundHandle = state.p2;
                 if (m.type === 'piston' || m.type === 'yoke' || m.type === 'quick-return') {
-                     // Calculate visual handle position
-                     const rad = (m.groundAngle || 0) * Math.PI / 180;
-                     const dist = m.type === 'quick-return' ? 120 : 100;
-                     groundHandle = {
-                         x: m.anchorX! + Math.cos(rad) * dist,
-                         y: m.anchorY! + Math.sin(rad) * dist
-                     };
+                    // Calculate visual handle position
+                    const rad = (m.groundAngle || 0) * Math.PI / 180;
+                    const dist = m.type === 'quick-return' ? 120 : 100;
+                    groundHandle = {
+                        x: m.anchorX! + Math.cos(rad) * dist,
+                        y: m.anchorY! + Math.sin(rad) * dist
+                    };
                 }
-                
+
                 if (dist(p, groundHandle) < HIT_RADIUS) {
                     setDragTarget({ mechId: m.id, type: 'P2' });
                     setSelectedId(m.id);
                     return;
                 }
-                
+
                 // Check P1 (Anchor/Crank Pivot)
                 if (dist(p, state.p1) < HIT_RADIUS * 1.5) {
-                     setDragTarget({ mechId: m.id, type: 'P1' });
-                     setSelectedId(m.id);
-                     return;
+                    setDragTarget({ mechId: m.id, type: 'P1' });
+                    setSelectedId(m.id);
+                    return;
                 }
             }
         }
@@ -237,7 +261,7 @@ export const Canvas: React.FC<CanvasProps> = ({
             const movementX = 'movementX' in e ? (e as React.MouseEvent).movementX : 0;
             const movementY = 'movementY' in e ? (e as React.MouseEvent).movementY : 0;
             if (movementX !== undefined) {
-                 setViewOffset(prev => ({ x: prev.x + movementX, y: prev.y + movementY }));
+                setViewOffset(prev => ({ x: prev.x + movementX, y: prev.y + movementY }));
             }
             return;
         }
@@ -262,7 +286,7 @@ export const Canvas: React.FC<CanvasProps> = ({
                 const dx = p.x - state.p1.x;
                 const dy = p.y - state.p1.y;
                 const newAngle = toDeg(Math.atan2(dy, dx));
-                
+
                 if (m.type === '4bar' || m.type === '5bar') {
                     const newGround = Math.hypot(dx, dy);
                     updateMechanism(m.id, { groundLength: newGround, groundAngle: newAngle });
@@ -294,16 +318,16 @@ export const Canvas: React.FC<CanvasProps> = ({
                     const safeY = Math.max(-limit, Math.min(limit, dY));
                     updateMechanism(m.id, { sliderOffset: safeY });
                 } else if (m.type === '5bar') {
-                     const newCoupler = dist(state.j1, p);
-                     const newRod = state.aux ? dist(state.aux, p) : 100;
-                     updateMechanism(m.id, { couplerLength: newCoupler, rodLength: newRod });
+                    const newCoupler = dist(state.j1, p);
+                    const newRod = state.aux ? dist(state.aux, p) : 100;
+                    updateMechanism(m.id, { couplerLength: newCoupler, rodLength: newRod });
                 }
             }
             else if (dragTarget.type === 'Effector') {
                 if (m.type !== 'crank') {
                     if (m.type === '5bar') {
-                         const newExtension = dist(state.j2, p);
-                         updateMechanism(m.id, { couplerPointDist: newExtension });
+                        const newExtension = dist(state.j2, p);
+                        updateMechanism(m.id, { couplerPointDist: newExtension });
                     } else {
                         const barAngle = Math.atan2(state.j2.y - state.j1.y, state.j2.x - state.j1.x);
                         const mouseAngle = Math.atan2(p.y - state.j1.y, p.x - state.j1.x);
@@ -321,12 +345,40 @@ export const Canvas: React.FC<CanvasProps> = ({
                 const last = userPath[userPath.length - 1];
                 const dx = Math.abs(p.x - last.x);
                 const dy = Math.abs(p.y - last.y);
-                if (dx > dy) p = { x: p.x, y: last.y }; 
-                else p = { x: last.x, y: p.y }; 
+                if (dx > dy) p = { x: p.x, y: last.y };
+                else p = { x: last.x, y: p.y };
             }
             const last = userPath[userPath.length - 1];
             if (!last || Math.hypot(p.x - last.x, p.y - last.y) > 5) {
                 setUserPath([...userPath, p]);
+            }
+        }
+
+        // Handle path move/resize drag
+        if (pathDragAction && pathDragStart && userPath.length > 0) {
+            const bounds = getPathBounds();
+            if (!bounds) return;
+
+            if (pathDragAction === 'move') {
+                // Move entire path
+                const dx = p.x - pathDragStart.x;
+                const dy = p.y - pathDragStart.y;
+                setUserPath(userPath.map(pt => ({ x: pt.x + dx, y: pt.y + dy })));
+                setPathDragStart(p);
+            } else if (pathDragAction === 'resize') {
+                // Resize from bottom-right corner
+                const centerX = (bounds.minX + bounds.maxX) / 2;
+                const centerY = (bounds.minY + bounds.maxY) / 2;
+                const oldDist = Math.hypot(pathDragStart.x - centerX, pathDragStart.y - centerY);
+                const newDist = Math.hypot(p.x - centerX, p.y - centerY);
+                if (oldDist > 0) {
+                    const scale = newDist / oldDist;
+                    setUserPath(userPath.map(pt => ({
+                        x: centerX + (pt.x - centerX) * scale,
+                        y: centerY + (pt.y - centerY) * scale
+                    })));
+                    setPathDragStart(p);
+                }
             }
         }
     };
@@ -335,12 +387,14 @@ export const Canvas: React.FC<CanvasProps> = ({
         setIsDrawing(false);
         setIsPanning(false);
         setDragTarget(null);
+        setPathDragAction(null);
+        setPathDragStart(null);
     };
 
     const crankDeg = (angle * 180) / Math.PI;
 
     return (
-        <div 
+        <div
             className={`w-full h-full bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden relative select-none ${isDrawMode ? 'ring-2 ring-indigo-500 ring-inset' : ''}`}
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
@@ -350,16 +404,16 @@ export const Canvas: React.FC<CanvasProps> = ({
             onTouchMove={handleMouseMove}
             onTouchEnd={handleMouseUp}
             onWheel={handleWheel}
-            tabIndex={0} 
+            tabIndex={0}
         >
-            <svg 
+            <svg
                 ref={svgRef}
-                viewBox={`0 0 ${VB_WIDTH} ${VB_HEIGHT}`} 
+                viewBox={`0 0 ${VB_WIDTH} ${VB_HEIGHT}`}
                 className={`w-full h-full ${isPanning ? 'cursor-grabbing' : 'cursor-default'}`}
                 preserveAspectRatio="xMidYMid slice"
             >
                 <g transform={`translate(${INITIAL_OFFSET_X + viewOffset.x}, ${INITIAL_OFFSET_Y + viewOffset.y}) scale(${zoom}, -${zoom})`}>
-                    
+
                     {/* Grid */}
                     <g opacity="0.1">
                         {Array.from({ length: 41 }).map((_, i) => (
@@ -379,7 +433,7 @@ export const Canvas: React.FC<CanvasProps> = ({
                         const opacity = isSelected ? 1 : 0.6;
                         const color = m.color;
                         const yokeSlotHalfHeight = m.type === 'yoke' ? Math.abs(m.sliderOffset) + m.crankLength + 30 : 0;
-                        
+
                         let rockerAngleDeg = 0;
                         if (m.type === '4bar' || m.type === 'quick-return') {
                             rockerAngleDeg = Math.atan2(j2.y - p2.y, j2.x - p2.x) * 180 / Math.PI;
@@ -389,20 +443,20 @@ export const Canvas: React.FC<CanvasProps> = ({
                             <g key={m.id} opacity={opacity}>
                                 {/* Anchor P1 Visualization */}
                                 <g transform={`translate(${p1.x}, ${p1.y})`}>
-                                     <g transform={`rotate(${crankDeg * (m.speed1 ?? 1)})`}>
+                                    <g transform={`rotate(${crankDeg * (m.speed1 ?? 1)})`}>
                                         <g fill={m.type === '5bar' ? "#d97706" : "#f59e0b"} stroke={m.type === '5bar' ? "#78350f" : "#b45309"} strokeWidth="2">
-                                             <GearPath radius={m.crankLength + 10} teeth={14} />
+                                            <GearPath radius={m.crankLength + 10} teeth={14} />
                                         </g>
                                         <circle cx="0" cy="0" r="4" fill="#475569" stroke="white" />
-                                     </g>
-                                     <circle cx="0" cy="0" r="12" fill="transparent" stroke={isSelected ? "white" : "transparent"} strokeWidth="2" strokeDasharray="2 2" className="cursor-move" />
-                                     
-                                     {isSelected && m.type !== 'crank' && (
-                                         <g transform={`rotate(${m.groundAngle || 0})`}>
-                                             <line x1="0" y1="0" x2="100" y2="0" stroke={color} strokeWidth="1" strokeDasharray="4 4" />
-                                             <circle cx="100" cy="0" r="6" fill="white" stroke={color} strokeWidth="2" className="cursor-grab" />
-                                         </g>
-                                     )}
+                                    </g>
+                                    <circle cx="0" cy="0" r="12" fill="transparent" stroke={isSelected ? "white" : "transparent"} strokeWidth="2" strokeDasharray="2 2" className="cursor-move" />
+
+                                    {isSelected && m.type !== 'crank' && (
+                                        <g transform={`rotate(${m.groundAngle || 0})`}>
+                                            <line x1="0" y1="0" x2="100" y2="0" stroke={color} strokeWidth="1" strokeDasharray="4 4" />
+                                            <circle cx="100" cy="0" r="6" fill="white" stroke={color} strokeWidth="2" className="cursor-grab" />
+                                        </g>
+                                    )}
                                 </g>
 
                                 {(m.type === '4bar' || m.type === 'quick-return') && m.showOutputGear && isValid && (
@@ -433,19 +487,19 @@ export const Canvas: React.FC<CanvasProps> = ({
                                         {m.type === '5bar' && aux && (
                                             <>
                                                 <g transform={`translate(${p2.x}, ${p2.y}) rotate(${(crankDeg * (m.speed2 ?? (m.gearRatio || 1))) + ((m.phase ?? 0) * 180 / Math.PI)})`}>
-                                                     <g fill="#f59e0b" stroke="#b45309" strokeWidth="2">
-                                                        <GearPath 
-                                                            radius={m.rockerLength + 10} 
-                                                            teeth={Math.max(3, Math.round(14 * (m.rockerLength / m.crankLength)))} 
+                                                    <g fill="#f59e0b" stroke="#b45309" strokeWidth="2">
+                                                        <GearPath
+                                                            radius={m.rockerLength + 10}
+                                                            teeth={Math.max(3, Math.round(14 * (m.rockerLength / m.crankLength)))}
                                                         />
-                                                     </g>
-                                                     <circle cx="0" cy="0" r="4" fill="#475569" stroke="white" />
+                                                    </g>
+                                                    <circle cx="0" cy="0" r="4" fill="#475569" stroke="white" />
                                                 </g>
                                                 <line x1={p2.x} y1={p2.y} x2={aux.x} y2={aux.y} stroke="#78350f" strokeWidth="4" strokeLinecap="round" />
                                                 <circle cx={aux.x} cy={aux.y} r={4} fill={color} className="cursor-grab" />
-                                                
+
                                                 {isSelected && (
-                                                     <circle cx={aux.x} cy={aux.y} r={8} fill="transparent" stroke="white" strokeWidth="2" strokeDasharray="2,2" className="cursor-grab"/>
+                                                    <circle cx={aux.x} cy={aux.y} r={8} fill="transparent" stroke="white" strokeWidth="2" strokeDasharray="2,2" className="cursor-grab" />
                                                 )}
 
                                                 <line x1={j1.x} y1={j1.y} x2={effector.x} y2={effector.y} stroke="#475569" strokeWidth="6" strokeLinecap="round" />
@@ -458,24 +512,24 @@ export const Canvas: React.FC<CanvasProps> = ({
 
                                         {(m.type === 'piston' || m.type === 'yoke' || m.type === 'quick-return') && (
                                             <>
-                                               {m.type === 'piston' && (
-                                                   <>
+                                                {m.type === 'piston' && (
+                                                    <>
                                                         <g transform={`translate(${p1.x}, ${p1.y}) rotate(${m.groundAngle || 0}) translate(0, ${m.sliderOffset})`}>
-                                                            <line x1="-1000" y1="12" x2="1000" y2="12" stroke="#94a3b8" strokeWidth="2" opacity={0.5}/>
-                                                            <line x1="-1000" y1="-12" x2="1000" y2="-12" stroke="#94a3b8" strokeWidth="2" opacity={0.5}/>
+                                                            <line x1="-1000" y1="12" x2="1000" y2="12" stroke="#94a3b8" strokeWidth="2" opacity={0.5} />
+                                                            <line x1="-1000" y1="-12" x2="1000" y2="-12" stroke="#94a3b8" strokeWidth="2" opacity={0.5} />
                                                         </g>
                                                         <path d={`M ${j1.x} ${j1.y} L ${j2.x} ${j2.y} L ${effector.x} ${effector.y} Z`} fill={`${color}20`} stroke={color} strokeWidth="1" />
                                                         <line x1={j1.x} y1={j1.y} x2={j2.x} y2={j2.y} stroke={color} strokeWidth="8" strokeLinecap="round" />
-                                                        <rect x={j2.x - 20} y={j2.y - 10} width="40" height="20" fill="#334155" rx="2" transform={`rotate(${m.groundAngle||0} ${j2.x} ${j2.y})`} />
-                                                   </>
-                                               )}
+                                                        <rect x={j2.x - 20} y={j2.y - 10} width="40" height="20" fill="#334155" rx="2" transform={`rotate(${m.groundAngle || 0} ${j2.x} ${j2.y})`} />
+                                                    </>
+                                                )}
 
                                                 {m.type === 'yoke' && (
                                                     <>
                                                         <g transform={`translate(${p1.x}, ${p1.y}) rotate(${m.groundAngle || 0}) translate(0, ${m.sliderOffset})`}>
                                                             <line x1="-1000" y1="0" x2="1000" y2="0" stroke="#cbd5e1" strokeWidth="4" strokeDasharray="8 8" />
                                                         </g>
-                                                        <g transform={`translate(${j2.x}, ${j2.y}) rotate(${m.groundAngle||0})`}>
+                                                        <g transform={`translate(${j2.x}, ${j2.y}) rotate(${m.groundAngle || 0})`}>
                                                             <rect x="-40" y="-10" width="80" height="20" fill={color} rx="4" />
                                                             <rect x="-15" y={-yokeSlotHalfHeight} width="30" height={yokeSlotHalfHeight * 2} rx="4" fill="none" stroke={color} strokeWidth="4" />
                                                             <line x1="0" y1={-yokeSlotHalfHeight + 10} x2="0" y2={yokeSlotHalfHeight - 10} stroke="#fef3c7" strokeWidth="14" strokeLinecap="round" />
@@ -483,7 +537,7 @@ export const Canvas: React.FC<CanvasProps> = ({
                                                         <circle cx={j1.x} cy={j1.y} r={7} fill="#78350f" />
                                                     </>
                                                 )}
-                                                
+
                                                 {m.type === 'quick-return' && (
                                                     <>
                                                         <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke="#cbd5e1" strokeWidth="8" strokeLinecap="round" />
@@ -498,7 +552,7 @@ export const Canvas: React.FC<CanvasProps> = ({
                                         )}
 
                                         {m.type !== 'crank' && (
-                                             <circle cx={effector.x} cy={effector.y} r={6 / zoom} fill="#ef4444" stroke="white" strokeWidth={2/zoom} className="cursor-grab" />
+                                            <circle cx={effector.x} cy={effector.y} r={6 / zoom} fill="#ef4444" stroke="white" strokeWidth={2 / zoom} className="cursor-grab" />
                                         )}
                                     </>
                                 ) : (
@@ -508,7 +562,7 @@ export const Canvas: React.FC<CanvasProps> = ({
                                 )}
 
                                 {isSelected && isValid && (
-                                    <circle cx={j1.x} cy={j1.y} r={8} fill="transparent" stroke="white" strokeWidth="2" strokeDasharray="2,2"/>
+                                    <circle cx={j1.x} cy={j1.y} r={8} fill="transparent" stroke="white" strokeWidth="2" strokeDasharray="2,2" />
                                 )}
                             </g>
                         );
@@ -516,32 +570,136 @@ export const Canvas: React.FC<CanvasProps> = ({
 
                     {showTrace && Object.entries(traces).map(([id, trace]: [string, Point[]]) => (
                         trace.length > 1 && (
-                            <path 
+                            <path
                                 key={id}
-                                d={`M ${trace.map(p => `${p.x},${p.y}`).join(' L ')}`} 
-                                fill="none" 
-                                stroke="white" 
-                                strokeWidth={3 / zoom} 
-                                opacity="0.9" 
-                                strokeLinecap="round" 
+                                d={`M ${trace.map(p => `${p.x},${p.y}`).join(' L ')}`}
+                                fill="none"
+                                stroke="white"
+                                strokeWidth={3 / zoom}
+                                opacity="0.9"
+                                strokeLinecap="round"
                                 strokeLinejoin="round"
                                 style={{ filter: 'drop-shadow(0px 0px 3px rgba(0,0,0,0.5))' }}
                             />
                         )
                     ))}
 
-                    {userPath.length > 0 && (
-                        <polyline 
-                            points={userPath.map(p => `${p.x},${p.y}`).join(' ')} 
-                            fill="none" 
-                            stroke="#6366f1" 
-                            strokeWidth={4 / zoom} 
-                            strokeDasharray="8,6" 
-                            strokeLinecap="round" 
-                            opacity={0.8}
-                            pointerEvents="none" 
-                        />
-                    )}
+                    {userPath.length > 0 && (() => {
+                        const bounds = getPathBounds();
+                        const PADDING = 10 / zoom;
+                        const HANDLE_SIZE = 12 / zoom;
+
+                        return (
+                            <g>
+                                {/* Main path - clickable, using polyline for open/closed path support */}
+                                <polyline
+                                    points={userPath.map(p => `${p.x},${p.y}`).join(' ')}
+                                    fill="none"
+                                    stroke="#6366f1"
+                                    strokeWidth={4 / zoom}
+                                    strokeDasharray="8,6"
+                                    strokeLinecap="round"
+                                    opacity={0.8}
+                                    style={{ cursor: isPathSelected ? 'move' : 'pointer' }}
+                                    pointerEvents="stroke"
+                                    onMouseEnter={() => setIsHoveringPath(true)}
+                                    onMouseLeave={() => setIsHoveringPath(false)}
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setIsPathSelected(true);
+                                    }}
+                                    onMouseDown={(e) => {
+                                        if (isPathSelected) {
+                                            e.stopPropagation();
+                                            const p = getWorldPoint(e as any);
+                                            if (p) {
+                                                setPathDragAction('move');
+                                                setPathDragStart(p);
+                                            }
+                                        }
+                                    }}
+                                />
+
+                                {/* Selection box and controls */}
+                                {isPathSelected && bounds && (
+                                    <g>
+                                        {/* Selection rectangle - entire area is draggable */}
+                                        <rect
+                                            x={bounds.minX - PADDING}
+                                            y={bounds.minY - PADDING}
+                                            width={bounds.maxX - bounds.minX + PADDING * 2}
+                                            height={bounds.maxY - bounds.minY + PADDING * 2}
+                                            fill="transparent"
+                                            stroke="#3b82f6"
+                                            strokeWidth={2 / zoom}
+                                            strokeDasharray={`${4 / zoom},${4 / zoom}`}
+                                            style={{ cursor: 'move' }}
+                                            pointerEvents="all"
+                                            onMouseDown={(e) => {
+                                                e.stopPropagation();
+                                                const p = getWorldPoint(e as any);
+                                                if (p) {
+                                                    setPathDragAction('move');
+                                                    setPathDragStart(p);
+                                                }
+                                            }}
+                                        />
+
+                                        {/* Resize handle (bottom-right corner) */}
+                                        <g transform={`translate(${bounds.maxX + PADDING}, ${bounds.minY - PADDING}) scale(1, -1)`}>
+                                            <rect
+                                                x={-HANDLE_SIZE / 2}
+                                                y={-HANDLE_SIZE / 2}
+                                                width={HANDLE_SIZE}
+                                                height={HANDLE_SIZE}
+                                                fill="#3b82f6"
+                                                stroke="white"
+                                                strokeWidth={1 / zoom}
+                                                rx={2 / zoom}
+                                                style={{ cursor: 'nwse-resize' }}
+                                                pointerEvents="fill"
+                                                onMouseDown={(e) => {
+                                                    e.stopPropagation();
+                                                    const p = getWorldPoint(e as any);
+                                                    if (p) {
+                                                        setPathDragAction('resize');
+                                                        setPathDragStart(p);
+                                                    }
+                                                }}
+                                            />
+                                        </g>
+
+                                        {/* Delete button (top-left corner) */}
+                                        <g transform={`translate(${bounds.minX - PADDING}, ${bounds.maxY + PADDING}) scale(1, -1)`}>
+                                            <circle
+                                                r={HANDLE_SIZE * 0.8}
+                                                fill="#ef4444"
+                                                stroke="white"
+                                                strokeWidth={1 / zoom}
+                                                style={{ cursor: 'pointer' }}
+                                                pointerEvents="all"
+                                                onMouseDown={(e) => {
+                                                    e.stopPropagation();
+                                                    e.preventDefault();
+                                                    setUserPath([]);
+                                                    setIsPathSelected(false);
+                                                }}
+                                            />
+                                            <text
+                                                x={0}
+                                                y={HANDLE_SIZE * 0.35}
+                                                textAnchor="middle"
+                                                fill="white"
+                                                fontSize={HANDLE_SIZE}
+                                                fontWeight="bold"
+                                                pointerEvents="none"
+                                            >×</text>
+                                        </g>
+                                    </g>
+                                )}
+                            </g>
+                        );
+                    })()}
 
                 </g>
             </svg>

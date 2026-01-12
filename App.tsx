@@ -14,6 +14,7 @@ const App: React.FC = () => {
     // Initial Configuration with one 4-bar
     const [config, setConfig] = useState<GlobalConfig>({
         speed: 1,
+        rotation: 0,
         mechanisms: [{
             id: initialId,
             type: '4bar',
@@ -37,6 +38,7 @@ const App: React.FC = () => {
             name: "Two-Gear Drawing Machine",
             conf: {
                 speed: 1,
+                rotation: 0,
                 mechanisms: [{
                     id: 'p_geared',
                     type: '5bar',
@@ -59,6 +61,7 @@ const App: React.FC = () => {
             name: "Crank-Rocker",
             conf: {
                 speed: 1,
+                rotation: 0,
                 mechanisms: [{ id: 'p1', type: '4bar', visible: true, color: '#3b82f6', groundLength: 180, crankLength: 50, couplerLength: 180, rockerLength: 120, sliderOffset: 0, couplerPointDist: 80, couplerPointAngle: 45 }]
             }
         },
@@ -66,6 +69,7 @@ const App: React.FC = () => {
             name: "Piston Pusher",
             conf: {
                 speed: 1,
+                rotation: 0,
                 mechanisms: [{ id: 'p2', type: 'piston', visible: true, color: '#10b981', groundLength: 0, crankLength: 60, couplerLength: 160, rockerLength: 0, sliderOffset: 40, couplerPointDist: 0, couplerPointAngle: 0 }]
             }
         },
@@ -73,6 +77,7 @@ const App: React.FC = () => {
             name: "Scotch Yoke",
             conf: {
                 speed: 1,
+                rotation: 0,
                 mechanisms: [{ id: 'p3', type: 'yoke', visible: true, color: '#f59e0b', groundLength: 0, crankLength: 50, couplerLength: 0, rockerLength: 0, sliderOffset: 0, couplerPointDist: 50, couplerPointAngle: 0 }]
             }
         }
@@ -341,6 +346,8 @@ const App: React.FC = () => {
                     onExportSVG={handleExportSVG}
                     onExportDXF={handleExportDXF}
                     onOpenTracking={() => setShowTrackingModal(true)}
+                    angle={angle}
+                    setAngle={setAngle}
                 />
             </div>
 

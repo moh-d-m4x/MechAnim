@@ -40,6 +40,7 @@ export interface MechanismConfig {
 
 export interface GlobalConfig {
     speed: number;
+    rotation: number;  // Manual rotation angle in degrees (0-360)
     mechanisms: MechanismConfig[];
 }
 
