@@ -10,6 +10,7 @@ export interface TrackingPoint {
     frame: number;
     confidence?: number;  // 0-1, confidence of detection
     corrected?: boolean;  // True if manually corrected
+    visible?: boolean;
 }
 
 export interface TrackRequest {

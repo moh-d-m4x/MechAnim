@@ -543,10 +543,21 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({ isOpen, onClose, o
                 const scaleY = canvas.height / videoState.height;
 
                 ctx.beginPath();
-                ctx.moveTo(motionPath[0].x * scaleX, motionPath[0].y * scaleY);
 
-                for (let i = 1; i < motionPath.length; i++) {
-                    ctx.lineTo(motionPath[i].x * scaleX, motionPath[i].y * scaleY);
+                let isDrawing = false;
+                for (let i = 0; i < motionPath.length; i++) {
+                    const pt = motionPath[i];
+                    // Draw if visible (default true)
+                    if (pt.visible !== false) {
+                        if (!isDrawing) {
+                            ctx.moveTo(pt.x * scaleX, pt.y * scaleY);
+                            isDrawing = true;
+                        } else {
+                            ctx.lineTo(pt.x * scaleX, pt.y * scaleY);
+                        }
+                    } else {
+                        isDrawing = false;
+                    }
                 }
 
                 ctx.strokeStyle = 'rgba(0, 200, 255, 0.8)';
@@ -555,7 +566,7 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({ isOpen, onClose, o
 
                 // Highlight current frame position
                 const currentPoint = motionPath[videoState.currentFrame] || motionPath[motionPath.length - 1];
-                if (currentPoint) {
+                if (currentPoint && currentPoint.visible !== false) {
                     ctx.beginPath();
                     ctx.arc(currentPoint.x * scaleX, currentPoint.y * scaleY, 6, 0, Math.PI * 2);
                     ctx.fillStyle = '#00ff00';
@@ -797,7 +808,9 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({ isOpen, onClose, o
         } else {
             // AUTO MODE: Use motion path
             if (motionPath.length === 0) return;
-            sourcePoints = motionPath.map(p => ({ x: p.x, y: p.y }));
+            sourcePoints = motionPath
+                .filter(pt => pt.visible !== false)
+                .map(p => ({ x: p.x, y: p.y }));
         }
 
         // Main canvas world coordinates: origin (0,0) is at center
@@ -1112,6 +1125,8 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({ isOpen, onClose, o
                             <Upload className="w-4 h-4" />
                             Load Media
                         </button>
+
+
 
                         {/* Path Info - show tracked or manual points count */}
                         {motionPath.length > 0 && isAutoDetection && (

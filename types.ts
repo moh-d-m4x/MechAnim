@@ -59,6 +59,7 @@ export interface TrackingPoint {
     x: number;
     y: number;
     frame: number;
+    visible?: boolean;
 }
 
 export interface MotionPath {

@@ -64,6 +64,7 @@ class PathPoint(BaseModel):
     frame: int
     confidence: float = 1.0
     corrected: bool = False
+    visible: bool = True
 
 
 class TrackResponse(BaseModel):
@@ -159,7 +160,8 @@ async def track_video(request: TrackRequest):
             # Convert to response format
             path_points = [PathPoint(
                 x=p.x, y=p.y, frame=p.frame, 
-                confidence=p.confidence, corrected=getattr(p, 'corrected', False)
+                confidence=p.confidence, corrected=getattr(p, 'corrected', False),
+                visible=p.visible
             ) for p in path]
             
             # Calculate duration

@@ -13,14 +13,14 @@ if not exist "backend\models" (
 )
 
 echo [2/5] Checking for TAPIR model checkpoint...
-if not exist "backend\models\causal_bootstapir_checkpoint.pt" (
+if not exist "backend\models\bootstapir_checkpoint_v2.pt" (
     echo.
     echo ================================================
     echo   TAPIR model not found!
     echo   The model will be downloaded when you first
     echo   use Auto tracking mode in the app.
     echo   Or download manually from:
-    echo   https://storage.googleapis.com/dm-tapnet/bootstap/causal_bootstapir_checkpoint.pt
+    echo   https://storage.googleapis.com/dm-tapnet/bootstap/bootstapir_checkpoint_v2.pt
     echo ================================================
     echo.
 )
@@ -37,7 +37,13 @@ start "MechAnim Backend" cmd /k "cd /d %~dp0backend && C:\Users\hp\miniconda3\py
 echo Waiting for backend to start...
 timeout /t 5 /nobreak > nul
 
-echo [5/5] Starting Frontend Dev Server...
+echo [5/5] Checking for existing frontend on port 3000...
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr :3000 ^| findstr LISTENING') do (
+    echo Killing existing process %%a
+    taskkill /F /PID %%a 2>nul
+)
+
+echo Starting Frontend Dev Server...
 echo.
 echo ============================================
 echo   Opening http://localhost:3000
