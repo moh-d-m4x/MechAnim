@@ -1,6 +1,6 @@
 # MechAnim: Character Motion Designer
 
-![MechAnim Dashboard](https://raw.githubusercontent.com/moh-d-m4x/MechAnim/refs/heads/main/ref/MechAnim_Dashboard.PNG)
+![MechAnim Dashboard](https://github.com/moh-d-m4x/MechAnim/blob/main/ref/MechAnim_Dashboard.png?raw=true)
 
 **MechAnim** is a powerful web-based tool for designing, simulating, and optimizing mechanical linkages and character motion. It combines interactive 2D physics simulation with genetic algorithms to help users create complex mechanisms that follow specific motion paths.
 
@@ -12,7 +12,7 @@
 - **Real-time Simulation**: Visualize motion instantly as you modify the design.
 - **Parametric Controls**: Fine-tune specific values like crank length, ground distance, and speed ratios.
 
-![Draw Mode](https://raw.githubusercontent.com/moh-d-m4x/MechAnim/refs/heads/main/ref/Draw_Mode.PNG)
+![Draw Mode](https://github.com/moh-d-m4x/MechAnim/blob/main/ref/Draw_Mode.png?raw=true)
 
 ### 🧬 AI-Powered Optimization
 - **Path Drawing**: Draw a desired motion path directly on the canvas.
@@ -27,7 +27,8 @@
 - **Path Extraction**: Convert your annotated path into a target for mechanism optimization.
 - **Loop Closing**: Option to automatically connect the start and end points for cyclic motion.
 
-![Tracking Modal](https://raw.githubusercontent.com/moh-d-m4x/MechAnim/refs/heads/main/ref/Tracking_Modal_1.PNG)
+![Tracking Modal](https://github.com/moh-d-m4x/MechAnim/blob/main/ref/Tracking_Modal_1.png?raw=true)
+![Tracking Moda2](https://github.com/moh-d-m4x/MechAnim/blob/main/ref/Tracking_Modal_2.png?raw=true)
 
 ### 📤 Export & Integration
 - **SVG Export**: Export your mechanism and path as scalable vector graphics.
