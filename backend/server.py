@@ -1,5 +1,5 @@
 """
-FastAPI server for video tracking with Norfair.
+FastAPI server for video tracking with TAPIR.
 """
 import os
 import base64
@@ -11,6 +11,8 @@ from pydantic import BaseModel
 import uvicorn
 
 from tracker import SinglePointTracker, TrackingPoint, smooth_path
+from tapir_tracker import get_tracker as get_tapir_tracker
+from model_manager import model_manager
 
 
 def extract_frames_from_video(video_path: str):
@@ -79,6 +81,48 @@ async def health_check():
     return {"status": "ok", "service": "tracking"}
 
 
+# ============ Model Management Endpoints ============
+
+@app.get("/models/status")
+async def get_model_status():
+    """Check if required TAPIR model files exist."""
+    return model_manager.check_models_exist()
+
+
+@app.get("/models/gpu-check")
+async def check_gpu():
+    """Check if GPU is available for TAPIR inference."""
+    return model_manager.detect_gpu()
+
+
+class DownloadRequest(BaseModel):
+    use_gpu: bool = False
+
+
+@app.post("/models/download")
+async def start_model_download(request: DownloadRequest):
+    """Start downloading required model files."""
+    return model_manager.start_download(use_gpu=request.use_gpu)
+
+
+@app.get("/models/download-progress")
+async def get_download_progress():
+    """Get current download progress."""
+    progress = model_manager.get_download_progress()
+    if progress is None:
+        return {"status": "idle"}
+    return progress
+
+
+@app.post("/models/cancel")
+async def cancel_download():
+    """Cancel current download."""
+    model_manager.cancel_download()
+    return {"status": "cancelled"}
+
+
+# ============ Tracking Endpoints ============
+
 @app.post("/track", response_model=TrackResponse)
 async def track_video(request: TrackRequest):
     """
@@ -104,20 +148,18 @@ async def track_video(request: TrackRequest):
             if len(frames) == 0:
                 raise HTTPException(status_code=400, detail="Could not extract frames from video")
             
-            # Track the point
-            tracker = SinglePointTracker(distance_threshold=50.0, method=request.tracking_method)
-            path = tracker.track_video(
+            # Track the point using TAPIR
+            tapir = get_tapir_tracker()
+            path = tapir.track_video(
                 frames=frames,
                 init_point=(request.init_point.x, request.init_point.y),
                 init_frame=request.init_point.frame
             )
             
-            # No smoothing for auto detection - return raw tracked path
-            
             # Convert to response format
             path_points = [PathPoint(
                 x=p.x, y=p.y, frame=p.frame, 
-                confidence=p.confidence, corrected=p.corrected
+                confidence=p.confidence, corrected=getattr(p, 'corrected', False)
             ) for p in path]
             
             # Calculate duration

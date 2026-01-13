@@ -1,20 +1,12 @@
 """
-Norfair-based single-point tracker for motion path extraction.
+Single-point tracker for motion path extraction.
 Uses OpenCV calcOpticalFlowPyrLK (Pyramidal Lucas-Kanade) as detector.
+TAPIR model is now the primary method for Auto detection.
 """
 import numpy as np
 from typing import List, Tuple, Optional
 from dataclasses import dataclass
 import cv2
-
-try:
-    from norfair import Detection, Tracker
-    from norfair.filter import OptimizedKalmanFilterFactory
-    from norfair.distances import frobenius, mean_euclidean, mean_manhattan
-    NORFAIR_AVAILABLE = True
-except ImportError:
-    NORFAIR_AVAILABLE = False
-    print("Warning: Norfair not installed. Using fallback tracker.")
 
 
 @dataclass
@@ -24,21 +16,6 @@ class TrackingPoint:
     frame: int
     confidence: float = 1.0  # 1.0 = detected, 0.0 = predicted/occluded
     corrected: bool = False  # True if manually corrected by user
-
-
-# Mapping of distance function names to actual functions
-def get_distance_function(name: str):
-    """Get distance function by name."""
-    if not NORFAIR_AVAILABLE:
-        return None
-    
-    distance_functions = {
-        'euclidean': lambda d, t: np.linalg.norm(d.points - t.estimate),
-        'frobenius': frobenius,
-        'mean_euclidean': mean_euclidean,
-        'mean_manhattan': mean_manhattan,
-    }
-    return distance_functions.get(name, distance_functions['euclidean'])
 
 
 class SinglePointTracker:

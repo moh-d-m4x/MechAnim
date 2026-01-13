@@ -167,3 +167,96 @@ export function getVideoFormat(filename: string): string {
     return 'mp4';
 }
 
+
+// ============ Model Management API ============
+
+export interface ModelStatus {
+    checkpoint_exists: boolean;
+    checkpoint_path: string;
+    onnx_exists: boolean;
+    onnx_path: string;
+    ready: boolean;
+}
+
+export interface GpuCheckResult {
+    gpu_available: boolean;
+    gpu_name: string | null;
+    cuda_version: string | null;
+    recommended: 'gpu' | 'cpu';
+}
+
+export interface DownloadProgress {
+    file_name: string;
+    total_bytes: number;
+    downloaded_bytes: number;
+    percent: number;
+    is_complete: boolean;
+    error: string | null;
+    status?: 'idle';
+}
+
+/**
+ * Check if required TAPIR model files are downloaded.
+ */
+export async function checkModelStatus(): Promise<ModelStatus | null> {
+    try {
+        const response = await fetch(`${API_BASE}/models/status`);
+        return await response.json();
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Check if GPU is available for TAPIR inference.
+ */
+export async function checkGpuAvailable(): Promise<GpuCheckResult | null> {
+    try {
+        const response = await fetch(`${API_BASE}/models/gpu-check`);
+        return await response.json();
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Start downloading required model files.
+ */
+export async function startModelDownload(useGpu: boolean): Promise<{ status: string }> {
+    try {
+        const response = await fetch(`${API_BASE}/models/download`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ use_gpu: useGpu })
+        });
+        return await response.json();
+    } catch {
+        return { status: 'error' };
+    }
+}
+
+/**
+ * Get current download progress.
+ */
+export async function getDownloadProgress(): Promise<DownloadProgress | null> {
+    try {
+        const response = await fetch(`${API_BASE}/models/download-progress`);
+        return await response.json();
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Cancel current download.
+ */
+export async function cancelDownload(): Promise<{ status: string }> {
+    try {
+        const response = await fetch(`${API_BASE}/models/cancel`, {
+            method: 'POST'
+        });
+        return await response.json();
+    } catch {
+        return { status: 'error' };
+    }
+}

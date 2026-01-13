@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { X, Upload, Crosshair, Play, Square, Eye, ArrowRight, Loader2, AlertCircle, CheckCircle } from 'lucide-react';
+import { X, Upload, Crosshair, Play, Square, Eye, ArrowRight, Loader2, AlertCircle, CheckCircle, Download } from 'lucide-react';
 import { Point, TrackingPoint, MotionPath } from '../types';
-import { trackVideo, fileToBase64, getVideoFormat, checkBackendHealth } from '../utils/trackingApi';
+import { trackVideo, fileToBase64, getVideoFormat, checkBackendHealth, checkModelStatus, ModelStatus } from '../utils/trackingApi';
 import { parseGIF, decompressFrames } from 'gifuct-js';
+import { ModelDownloadDialog } from './ModelDownloadDialog';
 
 interface TrackingModalProps {
     isOpen: boolean;
@@ -66,6 +67,8 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({ isOpen, onClose, o
     const [corrections, setCorrections] = useState<Record<number, { x: number; y: number }>>({});
     const [draggingPoint, setDraggingPoint] = useState<number | null>(null);  // Frame index being dragged
     const [isDraggingFile, setIsDraggingFile] = useState(false);  // For drag-drop file upload
+    const [showDownloadDialog, setShowDownloadDialog] = useState(false);  // TAPIR model download
+    const [tapirModelsReady, setTapirModelsReady] = useState(false);  // Whether TAPIR models are downloaded
 
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const videoRef = useRef<HTMLVideoElement>(null);
@@ -93,6 +96,18 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({ isOpen, onClose, o
         setTrackingRect(null);
         setMotionPath([]);
         setShowPreview(false);
+
+        // Check TAPIR model status when switching to Auto mode
+        if (isAutoDetection) {
+            checkModelStatus().then(status => {
+                if (status) {
+                    setTapirModelsReady(status.ready);
+                    if (!status.ready) {
+                        setShowDownloadDialog(true);
+                    }
+                }
+            });
+        }
     }, [isAutoDetection]);
 
     // Force canvas redraw when modal opens (to show existing manual points)
@@ -353,7 +368,7 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({ isOpen, onClose, o
         return null;
     };
 
-    // Handle mouse DOWN - manual mode: drag point or add new, auto mode: start rectangle selection
+    // Handle mouse DOWN - manual mode: drag point or add new, auto mode: single click point selection
     const handleCanvasMouseDown = (event: React.MouseEvent<HTMLCanvasElement>) => {
         if (event.button !== 0 || !videoState.url) return; // Left click only
 
@@ -371,10 +386,9 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({ isOpen, onClose, o
                 setManualPoints(prev => [...prev, coords]);
             }
         } else {
-            // AUTO MODE: Start rectangle selection
-            setIsSelecting(true);
-            setSelectionStart(coords);
-            setTrackingRect({ x: coords.x, y: coords.y, width: 0, height: 0 });
+            // AUTO MODE: Single click point selection (no rectangle dragging)
+            // Create a small tracking rect centered on the click point
+            setTrackingRect({ x: coords.x - 20, y: coords.y - 20, width: 40, height: 40 });
             setMotionPath([]);
             setShowPreview(false);
         }
@@ -1114,23 +1128,35 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({ isOpen, onClose, o
 
                     <div className="flex gap-2">
                         {isAutoDetection && (
-                            <button
-                                onClick={handleRunTracking}
-                                disabled={!trackingRect || isTracking || backendStatus !== 'online'}
-                                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
-                            >
-                                {isTracking ? (
-                                    <>
-                                        <Loader2 className="w-4 h-4 animate-spin" />
-                                        Tracking...
-                                    </>
+                            <>
+                                {!tapirModelsReady ? (
+                                    <button
+                                        onClick={() => setShowDownloadDialog(true)}
+                                        className="flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-lg transition-colors"
+                                    >
+                                        <Download className="w-4 h-4" />
+                                        Download TAPIR
+                                    </button>
                                 ) : (
-                                    <>
-                                        <Play className="w-4 h-4" />
-                                        Run Tracking
-                                    </>
+                                    <button
+                                        onClick={handleRunTracking}
+                                        disabled={!trackingRect || isTracking || backendStatus !== 'online'}
+                                        className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
+                                    >
+                                        {isTracking ? (
+                                            <>
+                                                <Loader2 className="w-4 h-4 animate-spin" />
+                                                Tracking...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Play className="w-4 h-4" />
+                                                Run Tracking
+                                            </>
+                                        )}
+                                    </button>
                                 )}
-                            </button>
+                            </>
                         )}
                         {/* Smoothing checkbox for manual mode - next to Transfer button */}
                         {!isAutoDetection && (
@@ -1168,6 +1194,16 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({ isOpen, onClose, o
                     </div>
                 </div>
             </div>
+
+            {/* TAPIR Model Download Dialog */}
+            <ModelDownloadDialog
+                isOpen={showDownloadDialog}
+                onClose={() => setShowDownloadDialog(false)}
+                onComplete={() => {
+                    setShowDownloadDialog(false);
+                    setTapirModelsReady(true);
+                }}
+            />
         </div>
     );
 };
