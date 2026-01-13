@@ -1,9 +1,8 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { X, Upload, Crosshair, Play, Square, Eye, ArrowRight, Loader2, AlertCircle, CheckCircle, Download } from 'lucide-react';
-import { Point, TrackingPoint, MotionPath } from '../types';
-import { trackVideo, fileToBase64, getVideoFormat, checkBackendHealth, checkModelStatus, ModelStatus } from '../utils/trackingApi';
+import { X, Upload, Crosshair, Play, Square, ArrowRight, Loader2, AlertCircle } from 'lucide-react';
+import { Point } from '../types';
+
 import { parseGIF, decompressFrames } from 'gifuct-js';
-import { ModelDownloadDialog } from './ModelDownloadDialog';
 
 interface TrackingModalProps {
     isOpen: boolean;
@@ -47,17 +46,11 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({ isOpen, onClose, o
     const [isSelecting, setIsSelecting] = useState(false);
     const [selectionStart, setSelectionStart] = useState<{ x: number; y: number } | null>(null);
 
-    const [motionPath, setMotionPath] = useState<TrackingPoint[]>([]);
-    const [isTracking, setIsTracking] = useState(false);
     const [isPlaying, setIsPlaying] = useState(false);
-    const [showPreview, setShowPreview] = useState(false);
-    const [backendStatus, setBackendStatus] = useState<'checking' | 'online' | 'offline'>('checking');
     const [error, setError] = useState<string | null>(null);
-    const [trackingMethod, setTrackingMethod] = useState<'euclidean' | 'frobenius' | 'mean_euclidean' | 'mean_manhattan'>('euclidean');
 
     // Manual correction state
     const [editMode, setEditMode] = useState(false);
-    const [isAutoDetection, setIsAutoDetection] = useState(false);  // false = Manual (default)
     const [manualPoints, setManualPoints] = useState<{ x: number; y: number }[]>([]);  // Points placed in manual mode
     const [enableSmoothing, setEnableSmoothing] = useState(true);  // Smoothing checkbox - default ON
     const [connectEndPoints, setConnectEndPoints] = useState(true);  // Connect first/last points - default ON
@@ -67,8 +60,6 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({ isOpen, onClose, o
     const [corrections, setCorrections] = useState<Record<number, { x: number; y: number }>>({});
     const [draggingPoint, setDraggingPoint] = useState<number | null>(null);  // Frame index being dragged
     const [isDraggingFile, setIsDraggingFile] = useState(false);  // For drag-drop file upload
-    const [showDownloadDialog, setShowDownloadDialog] = useState(false);  // TAPIR model download
-    const [tapirModelsReady, setTapirModelsReady] = useState(false);  // Whether TAPIR models are downloaded
 
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const videoRef = useRef<HTMLVideoElement>(null);
@@ -76,39 +67,8 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({ isOpen, onClose, o
     const fileInputRef = useRef<HTMLInputElement>(null);
     const gifFrameImagesRef = useRef<HTMLImageElement[]>([]);
 
-    // Check backend health
-    useEffect(() => {
-        if (!isOpen) return;
-
-        const check = async () => {
-            const online = await checkBackendHealth();
-            setBackendStatus(online ? 'online' : 'offline');
-        };
-
-        check();
-        const interval = setInterval(check, 10000);
-        return () => clearInterval(interval);
-    }, [isOpen]);
-
-    // Clear selections when switching between Auto and Manual mode
-    useEffect(() => {
-        setManualPoints([]);
-        setTrackingRect(null);
-        setMotionPath([]);
-        setShowPreview(false);
-
-        // Check TAPIR model status when switching to Auto mode
-        if (isAutoDetection) {
-            checkModelStatus().then(status => {
-                if (status) {
-                    setTapirModelsReady(status.ready);
-                    if (!status.ready) {
-                        setShowDownloadDialog(true);
-                    }
-                }
-            });
-        }
-    }, [isAutoDetection]);
+    // Clear selections when switching (Simplified: just clear on open if needed, or keep logic simple)
+    // removed auto mode switching effect
 
     // Force canvas redraw when modal opens (to show existing manual points)
     useEffect(() => {
@@ -125,8 +85,7 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({ isOpen, onClose, o
 
         setVideoState(prev => ({ ...prev, isLoading: true, file }));
         setTrackingRect(null);
-        setMotionPath([]);
-        setShowPreview(false);
+        setTrackingRect(null);
         setError(null);
         setIsPlaying(false);
 
@@ -368,29 +327,21 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({ isOpen, onClose, o
         return null;
     };
 
-    // Handle mouse DOWN - manual mode: drag point or add new, auto mode: single click point selection
+    // Handle mouse DOWN - manual mode: drag point or add new
     const handleCanvasMouseDown = (event: React.MouseEvent<HTMLCanvasElement>) => {
         if (event.button !== 0 || !videoState.url) return; // Left click only
 
         const coords = getCanvasCoordinates(event);
         if (!coords) return;
 
-        if (!isAutoDetection) {
-            // MANUAL MODE: Check if clicking on existing point to drag, or add new
-            const pointIndex = getManualPointAtPosition(coords);
-            if (pointIndex !== null) {
-                // Start dragging existing point
-                setDraggingManualPoint(pointIndex);
-            } else {
-                // Add new point
-                setManualPoints(prev => [...prev, coords]);
-            }
+        // MANUAL MODE: Check if clicking on existing point to drag, or add new
+        const pointIndex = getManualPointAtPosition(coords);
+        if (pointIndex !== null) {
+            // Start dragging existing point
+            setDraggingManualPoint(pointIndex);
         } else {
-            // AUTO MODE: Single click point selection (no rectangle dragging)
-            // Create a small tracking rect centered on the click point
-            setTrackingRect({ x: coords.x - 20, y: coords.y - 20, width: 40, height: 40 });
-            setMotionPath([]);
-            setShowPreview(false);
+            // Add new point
+            setManualPoints(prev => [...prev, coords]);
         }
     };
 
@@ -400,29 +351,16 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({ isOpen, onClose, o
         if (!coords) return;
 
         // Manual mode: Handle point dragging or hover detection
-        if (!isAutoDetection) {
-            if (draggingManualPoint !== null) {
-                // Update dragged point position
-                setManualPoints(prev => prev.map((pt, i) =>
-                    i === draggingManualPoint ? coords : pt
-                ));
-            } else {
-                // Check for hover over points
-                const pointIndex = getManualPointAtPosition(coords);
-                setHoveredManualPoint(pointIndex);
-            }
-            return;
+        if (draggingManualPoint !== null) {
+            // Update dragged point position
+            setManualPoints(prev => prev.map((pt, i) =>
+                i === draggingManualPoint ? coords : pt
+            ));
+        } else {
+            // Check for hover over points
+            const pointIndex = getManualPointAtPosition(coords);
+            setHoveredManualPoint(pointIndex);
         }
-
-        // Auto mode: Update rectangle selection
-        if (!isSelecting || !selectionStart) return;
-
-        const x = Math.min(selectionStart.x, coords.x);
-        const y = Math.min(selectionStart.y, coords.y);
-        const width = Math.abs(coords.x - selectionStart.x);
-        const height = Math.abs(coords.y - selectionStart.y);
-
-        setTrackingRect({ x, y, width, height });
     };
 
     // Handle mouse UP - finish rectangle selection or stop dragging
@@ -432,52 +370,21 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({ isOpen, onClose, o
             setDraggingManualPoint(null);
             return;
         }
-
-        // Auto mode: finish rectangle selection
-        if (!isSelecting || !selectionStart) return;
-
-        const coords = getCanvasCoordinates(event);
-        if (coords) {
-            const x = Math.min(selectionStart.x, coords.x);
-            const y = Math.min(selectionStart.y, coords.y);
-            const width = Math.abs(coords.x - selectionStart.x);
-            const height = Math.abs(coords.y - selectionStart.y);
-
-            // Minimum size check - if too small, treat as a point click
-            if (width < 10 && height < 10) {
-                setTrackingRect({ x: coords.x - 20, y: coords.y - 20, width: 40, height: 40 });
-            } else {
-                setTrackingRect({ x, y, width, height });
-            }
-        }
-
-        setIsSelecting(false);
-        setSelectionStart(null);
     };
 
-    // Handle canvas RIGHT click - delete single point in manual mode, clear all in auto mode
+    // Handle canvas RIGHT click - delete single point in manual mode
     const handleCanvasRightClick = (event: React.MouseEvent<HTMLCanvasElement>) => {
         event.preventDefault();
 
-        if (!isAutoDetection) {
-            // MANUAL MODE: Delete only the clicked point (if any)
-            const coords = getCanvasCoordinates(event);
-            if (coords) {
-                const pointIndex = getManualPointAtPosition(coords);
-                if (pointIndex !== null) {
-                    // Remove only this point
-                    setManualPoints(prev => prev.filter((_, i) => i !== pointIndex));
-                    return;
-                }
+        // MANUAL MODE: Delete only the clicked point (if any)
+        const coords = getCanvasCoordinates(event);
+        if (coords) {
+            const pointIndex = getManualPointAtPosition(coords);
+            if (pointIndex !== null) {
+                // Remove only this point
+                setManualPoints(prev => prev.filter((_, i) => i !== pointIndex));
+                return;
             }
-            // No point clicked - don't do anything
-        } else {
-            // AUTO MODE: Clear all selection
-            setTrackingRect(null);
-            setMotionPath([]);
-            setShowPreview(false);
-            setIsSelecting(false);
-            setSelectionStart(null);
         }
     };
 
@@ -537,45 +444,10 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({ isOpen, onClose, o
                 ctx.stroke();
             }
 
-            // Draw motion path preview
-            if (showPreview && motionPath.length > 1) {
-                const scaleX = canvas.width / videoState.width;
-                const scaleY = canvas.height / videoState.height;
 
-                ctx.beginPath();
-
-                let isDrawing = false;
-                for (let i = 0; i < motionPath.length; i++) {
-                    const pt = motionPath[i];
-                    // Draw if visible (default true)
-                    if (pt.visible !== false) {
-                        if (!isDrawing) {
-                            ctx.moveTo(pt.x * scaleX, pt.y * scaleY);
-                            isDrawing = true;
-                        } else {
-                            ctx.lineTo(pt.x * scaleX, pt.y * scaleY);
-                        }
-                    } else {
-                        isDrawing = false;
-                    }
-                }
-
-                ctx.strokeStyle = 'rgba(0, 200, 255, 0.8)';
-                ctx.lineWidth = 3;
-                ctx.stroke();
-
-                // Highlight current frame position
-                const currentPoint = motionPath[videoState.currentFrame] || motionPath[motionPath.length - 1];
-                if (currentPoint && currentPoint.visible !== false) {
-                    ctx.beginPath();
-                    ctx.arc(currentPoint.x * scaleX, currentPoint.y * scaleY, 6, 0, Math.PI * 2);
-                    ctx.fillStyle = '#00ff00';
-                    ctx.fill();
-                }
-            }
 
             // Draw manual mode points with connecting lines (closed path)
-            if (!isAutoDetection && manualPoints.length > 0) {
+            if (manualPoints.length > 0) {
                 const scaleX = canvas.width / videoState.width;
                 const scaleY = canvas.height / videoState.height;
 
@@ -700,117 +572,70 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({ isOpen, onClose, o
                 cancelAnimationFrame(animationFrameId);
             }
         };
-    }, [videoState.currentFrame, videoState.isGif, trackingRect, motionPath, showPreview, videoState.width, videoState.height, videoState.url, isPlaying, isSelecting, manualPoints, isAutoDetection, enableSmoothing, connectEndPoints, isOpen, redrawKey, hoveredManualPoint, draggingManualPoint]);
+    }, [videoState.currentFrame, videoState.isGif, trackingRect, videoState.width, videoState.height, videoState.url, isPlaying, isSelecting, manualPoints, enableSmoothing, connectEndPoints, isOpen, redrawKey, hoveredManualPoint, draggingManualPoint]);
 
-    // Run tracking
-    const handleRunTracking = async () => {
-        if (!videoState.file || !trackingRect || backendStatus !== 'online') return;
 
-        setIsTracking(true);
-        setError(null);
-
-        try {
-            const base64Video = await fileToBase64(videoState.file);
-            const format = getVideoFormat(videoState.file.name);
-
-            // Calculate center of the selection rectangle for init point
-            const centerX = trackingRect.x + trackingRect.width / 2;
-            const centerY = trackingRect.y + trackingRect.height / 2;
-
-            const response = await trackVideo({
-                videoData: base64Video,
-                initPoint: { x: centerX, y: centerY, frame: videoState.currentFrame },
-                videoFormat: format,
-                smooth: true,
-                trackingMethod: trackingMethod
-            });
-
-            if (response.success && response.path.length > 0) {
-                setMotionPath(response.path);
-                setShowPreview(true);  // Auto-enable preview after tracking
-                setVideoState(prev => ({
-                    ...prev,
-                    fps: response.fps || prev.fps,
-                    totalFrames: response.frameCount || prev.totalFrames
-                }));
-            } else {
-                setError(response.error || 'Tracking failed');
-            }
-        } catch (err) {
-            setError(err instanceof Error ? err.message : 'Tracking failed');
-        } finally {
-            setIsTracking(false);
-        }
-    };
 
     // Transfer path to main canvas - normalized and centered
     const handleTransfer = () => {
         // Get source points based on mode
         let sourcePoints: { x: number; y: number }[];
 
-        if (!isAutoDetection) {
-            // MANUAL MODE: Use manual points (closed loop)
-            if (manualPoints.length < 2) return;
-            sourcePoints = [...manualPoints];
+        // MANUAL MODE: Use manual points (closed loop)
+        if (manualPoints.length < 2) return;
+        sourcePoints = [...manualPoints];
 
-            // Apply smoothing if enabled (Catmull-Rom spline interpolation)
-            if (enableSmoothing && sourcePoints.length >= 3) {
-                const smoothed: { x: number; y: number }[] = [];
-                const pointCount = sourcePoints.length;
-                const segmentsPerEdge = 20;
+        // Apply smoothing if enabled (Catmull-Rom spline interpolation)
+        if (enableSmoothing && sourcePoints.length >= 3) {
+            const smoothed: { x: number; y: number }[] = [];
+            const pointCount = sourcePoints.length;
+            const segmentsPerEdge = 20;
 
-                // For closed paths: iterate all segments including last-to-first
-                // For open paths: iterate only n-1 segments  
-                const numSegments = connectEndPoints ? pointCount : pointCount - 1;
+            // For closed paths: iterate all segments including last-to-first
+            // For open paths: iterate only n-1 segments  
+            const numSegments = connectEndPoints ? pointCount : pointCount - 1;
 
-                for (let i = 0; i < numSegments; i++) {
-                    let p0, p1, p2, p3;
+            for (let i = 0; i < numSegments; i++) {
+                let p0, p1, p2, p3;
 
-                    if (connectEndPoints) {
-                        // Closed path: wrap around using modulo
-                        p0 = sourcePoints[(i - 1 + pointCount) % pointCount];
-                        p1 = sourcePoints[i];
-                        p2 = sourcePoints[(i + 1) % pointCount];
-                        p3 = sourcePoints[(i + 2) % pointCount];
-                    } else {
-                        // Open path: clamp to endpoints
-                        p0 = sourcePoints[Math.max(0, i - 1)];
-                        p1 = sourcePoints[i];
-                        p2 = sourcePoints[Math.min(pointCount - 1, i + 1)];
-                        p3 = sourcePoints[Math.min(pointCount - 1, i + 2)];
-                    }
-
-                    for (let t = 0; t < segmentsPerEdge; t++) {
-                        const tt = t / segmentsPerEdge;
-                        const tt2 = tt * tt;
-                        const tt3 = tt2 * tt;
-
-                        const x = 0.5 * ((2 * p1.x) + (-p0.x + p2.x) * tt +
-                            (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * tt2 +
-                            (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * tt3);
-                        const y = 0.5 * ((2 * p1.y) + (-p0.y + p2.y) * tt +
-                            (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * tt2 +
-                            (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * tt3);
-
-                        smoothed.push({ x, y });
-                    }
+                if (connectEndPoints) {
+                    // Closed path: wrap around using modulo
+                    p0 = sourcePoints[(i - 1 + pointCount) % pointCount];
+                    p1 = sourcePoints[i];
+                    p2 = sourcePoints[(i + 1) % pointCount];
+                    p3 = sourcePoints[(i + 2) % pointCount];
+                } else {
+                    // Open path: clamp to endpoints
+                    p0 = sourcePoints[Math.max(0, i - 1)];
+                    p1 = sourcePoints[i];
+                    p2 = sourcePoints[Math.min(pointCount - 1, i + 1)];
+                    p3 = sourcePoints[Math.min(pointCount - 1, i + 2)];
                 }
 
-                // For open paths, add the last point
-                if (!connectEndPoints && smoothed.length > 0) {
-                    smoothed.push(sourcePoints[pointCount - 1]);
-                }
+                for (let t = 0; t < segmentsPerEdge; t++) {
+                    const tt = t / segmentsPerEdge;
+                    const tt2 = tt * tt;
+                    const tt3 = tt2 * tt;
 
-                if (smoothed.length > 0) {
-                    sourcePoints = smoothed;
+                    const x = 0.5 * ((2 * p1.x) + (-p0.x + p2.x) * tt +
+                        (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * tt2 +
+                        (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * tt3);
+                    const y = 0.5 * ((2 * p1.y) + (-p0.y + p2.y) * tt +
+                        (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * tt2 +
+                        (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * tt3);
+
+                    smoothed.push({ x, y });
                 }
             }
-        } else {
-            // AUTO MODE: Use motion path
-            if (motionPath.length === 0) return;
-            sourcePoints = motionPath
-                .filter(pt => pt.visible !== false)
-                .map(p => ({ x: p.x, y: p.y }));
+
+            // For open paths, add the last point
+            if (!connectEndPoints && smoothed.length > 0) {
+                smoothed.push(sourcePoints[pointCount - 1]);
+            }
+
+            if (smoothed.length > 0) {
+                sourcePoints = smoothed;
+            }
         }
 
         // Main canvas world coordinates: origin (0,0) is at center
@@ -843,7 +668,7 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({ isOpen, onClose, o
         }));
 
         // For closed paths in manual mode, duplicate first point at end to close polyline
-        if (!isAutoDetection && connectEndPoints && points.length > 1) {
+        if (connectEndPoints && points.length > 1) {
             points.push({ ...points[0] });
         }
 
@@ -860,46 +685,7 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({ isOpen, onClose, o
                 <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700">
                     <div className="flex items-center gap-3">
                         <Crosshair className="w-5 h-5 text-blue-400" />
-                        <h2 className="text-lg font-semibold text-white">Motion Tracking</h2>
-                        {backendStatus === 'checking' && (
-                            <span className="flex items-center gap-1 text-xs text-yellow-400">
-                                <Loader2 className="w-3 h-3 animate-spin" /> Connecting...
-                            </span>
-                        )}
-                        {backendStatus === 'online' && (
-                            <span className="flex items-center gap-1 text-xs text-green-400">
-                                <CheckCircle className="w-3 h-3" /> Backend Online (Norfair)
-                            </span>
-                        )}
-                        {backendStatus === 'offline' && (
-                            <span className="flex items-center gap-1 text-xs text-red-400">
-                                <AlertCircle className="w-3 h-3" /> Backend Offline
-                            </span>
-                        )}
-                    </div>
-
-                    {/* Auto/Manual Detection Toggle - Pill Style - Centered */}
-                    <div className="flex-1 flex justify-center">
-                        <div className="flex items-center bg-slate-700 rounded-full p-1">
-                            <button
-                                onClick={() => setIsAutoDetection(false)}
-                                className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all duration-200 ${!isAutoDetection
-                                    ? 'bg-slate-500 text-white shadow-md'
-                                    : 'text-slate-400 hover:text-slate-300'
-                                    }`}
-                            >
-                                Manual
-                            </button>
-                            <button
-                                onClick={() => setIsAutoDetection(true)}
-                                className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all duration-200 ${isAutoDetection
-                                    ? 'bg-slate-500 text-white shadow-md'
-                                    : 'text-slate-400 hover:text-slate-300'
-                                    }`}
-                            >
-                                Auto
-                            </button>
-                        </div>
+                        <h2 className="text-lg font-semibold text-white">Motion Tracking (Manual)</h2>
                     </div>
 
                     <button onClick={onClose} className="p-1 hover:bg-slate-700 rounded">
@@ -994,14 +780,10 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({ isOpen, onClose, o
 
                                             // Create a small rectangle for point clicks on the GIF image
                                             setTrackingRect({ x: x - 20, y: y - 20, width: 40, height: 40 });
-                                            setMotionPath([]);
-                                            setShowPreview(false);
                                         }}
                                         onContextMenu={(e) => {
                                             e.preventDefault();
                                             setTrackingRect(null);
-                                            setMotionPath([]);
-                                            setShowPreview(false);
                                         }}
                                         onLoad={() => {
                                             if (canvasRef.current && imgRef.current) {
@@ -1012,35 +794,7 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({ isOpen, onClose, o
                                     />
                                 )}
 
-                                {/* SVG overlay for path - shows during playback or when preview is on */}
-                                {showPreview && motionPath.length > 1 && (
-                                    <svg
-                                        className="absolute inset-0 w-full h-full pointer-events-none"
-                                        viewBox={`0 0 ${videoState.width} ${videoState.height}`}
-                                        preserveAspectRatio="xMidYMid meet"
-                                    >
-                                        {/* Full path line */}
-                                        <polyline
-                                            points={motionPath.map(p => `${p.x},${p.y}`).join(' ')}
-                                            fill="none"
-                                            stroke="rgba(0, 200, 255, 0.8)"
-                                            strokeWidth="3"
-                                            strokeLinecap="round"
-                                            strokeLinejoin="round"
-                                        />
-                                        {/* Current frame position marker */}
-                                        {motionPath[videoState.currentFrame] && (
-                                            <circle
-                                                cx={motionPath[videoState.currentFrame].x}
-                                                cy={motionPath[videoState.currentFrame].y}
-                                                r="8"
-                                                fill="#00ff00"
-                                                stroke="#ffffff"
-                                                strokeWidth="2"
-                                            />
-                                        )}
-                                    </svg>
-                                )}
+
 
                                 {/* Canvas - hidden when playing GIF, visible otherwise */}
                                 <canvas
@@ -1129,12 +883,8 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({ isOpen, onClose, o
 
 
                         {/* Path Info - show tracked or manual points count */}
-                        {motionPath.length > 0 && isAutoDetection && (
-                            <span className="text-green-400 text-sm px-3">
-                                ✓ Tracked {motionPath.length} points
-                            </span>
-                        )}
-                        {manualPoints.length > 0 && !isAutoDetection && (
+
+                        {manualPoints.length > 0 && (
                             <span className="text-cyan-400 text-sm px-3">
                                 ✓ {manualPoints.length} manual points
                             </span>
@@ -1142,65 +892,41 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({ isOpen, onClose, o
                     </div>
 
                     <div className="flex gap-2">
-                        {isAutoDetection && (
-                            <>
-                                {!tapirModelsReady ? (
-                                    <button
-                                        onClick={() => setShowDownloadDialog(true)}
-                                        className="flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-lg transition-colors"
-                                    >
-                                        <Download className="w-4 h-4" />
-                                        Download TAPIR
-                                    </button>
-                                ) : (
-                                    <button
-                                        onClick={handleRunTracking}
-                                        disabled={!trackingRect || isTracking || backendStatus !== 'online'}
-                                        className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
-                                    >
-                                        {isTracking ? (
-                                            <>
-                                                <Loader2 className="w-4 h-4 animate-spin" />
-                                                Tracking...
-                                            </>
-                                        ) : (
-                                            <>
-                                                <Play className="w-4 h-4" />
-                                                Run Tracking
-                                            </>
-                                        )}
-                                    </button>
-                                )}
-                            </>
+
+                        {/* Path Info - show tracked or manual points count */}
+                        {manualPoints.length > 0 && (
+                            <span className="text-cyan-400 text-sm px-3">
+                                ✓ {manualPoints.length} manual points
+                            </span>
                         )}
+                    </div>
+
+                    <div className="flex gap-2">
                         {/* Smoothing checkbox for manual mode - next to Transfer button */}
-                        {!isAutoDetection && (
-                            <label className="flex items-center gap-2 px-3 cursor-pointer">
-                                <input
-                                    type="checkbox"
-                                    checked={enableSmoothing}
-                                    onChange={(e) => setEnableSmoothing(e.target.checked)}
-                                    className="w-4 h-4 rounded border-slate-600 bg-slate-700 text-blue-500 focus:ring-blue-500 accent-blue-500"
-                                />
-                                <span className="text-sm text-slate-300">Smooth Path</span>
-                            </label>
-                        )}
-                        {/* Connect end points checkbox for manual mode */}
-                        {!isAutoDetection && (
-                            <label className="flex items-center gap-2 px-3 cursor-pointer">
-                                <input
-                                    type="checkbox"
-                                    checked={connectEndPoints}
-                                    onChange={(e) => setConnectEndPoints(e.target.checked)}
-                                    className="w-4 h-4 rounded border-slate-600 bg-slate-700 text-blue-500 focus:ring-blue-500 accent-blue-500"
-                                />
-                                <span className="text-sm text-slate-300">Connect Ends</span>
-                            </label>
-                        )}
+                        <label className="flex items-center gap-2 px-3 cursor-pointer">
+                            <input
+                                type="checkbox"
+                                checked={enableSmoothing}
+                                onChange={(e) => setEnableSmoothing(e.target.checked)}
+                                className="w-4 h-4 rounded border-slate-600 bg-slate-700 text-blue-500 focus:ring-blue-500 accent-blue-500"
+                            />
+                            <span className="text-sm text-slate-300">Smooth Path</span>
+                        </label>
+
+                        {/* Connect end points checkbox */}
+                        <label className="flex items-center gap-2 px-3 cursor-pointer">
+                            <input
+                                type="checkbox"
+                                checked={connectEndPoints}
+                                onChange={(e) => setConnectEndPoints(e.target.checked)}
+                                className="w-4 h-4 rounded border-slate-600 bg-slate-700 text-blue-500 focus:ring-blue-500 accent-blue-500"
+                            />
+                            <span className="text-sm text-slate-300">Connect Ends</span>
+                        </label>
 
                         <button
                             onClick={handleTransfer}
-                            disabled={(isAutoDetection && motionPath.length === 0) || (!isAutoDetection && manualPoints.length < 2)}
+                            disabled={manualPoints.length < 2}
                             className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-500 disabled:bg-slate-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
                         >
                             <ArrowRight className="w-4 h-4" />
@@ -1209,16 +935,6 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({ isOpen, onClose, o
                     </div>
                 </div>
             </div>
-
-            {/* TAPIR Model Download Dialog */}
-            <ModelDownloadDialog
-                isOpen={showDownloadDialog}
-                onClose={() => setShowDownloadDialog(false)}
-                onComplete={() => {
-                    setShowDownloadDialog(false);
-                    setTapirModelsReady(true);
-                }}
-            />
         </div>
     );
 };

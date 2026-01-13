@@ -20,15 +20,14 @@
 - **Smart Generation**: Uses Monte Carlo search and evolutionary strategies to find the best fit.
 - **Shape Preservation**: Optimization algorithms respect the "DNA" of mechanism types, preserving speed ratios and key characteristics while fitting the curve.
 
-### 📹 Video Motion Tracking (BootsTAPIR)
-- **Import Video**: Upload reference footage of motion.
-- **TAPIR Point Tracking**: Uses Google DeepMind's BootsTAPIR model for state-of-the-art point tracking.
-- **GPU Accelerated**: Leverages NVIDIA CUDA for fast inference on supported GPUs.
-- **Path Extraction**: Convert video motion into a target path for mechanism optimization.
-- **Manual Correction**: Fine-tune tracking results frame-by-frame for perfect accuracy.
+### ✍️ Manual Motion Tracking
+- **Import Video/GIF**: Upload reference footage of motion.
+- **Manual Annotation**: Click and drag to define points on video frames.
+- **Path Smoothing**: Automatically smooth your manually placed points using Catmull-Rom splines.
+- **Path Extraction**: Convert your annotated path into a target for mechanism optimization.
+- **Loop Closing**: Option to automatically connect the start and end points for cyclic motion.
 
 ![Tracking Modal](https://raw.githubusercontent.com/moh-d-m4x/MechAnim/refs/heads/main/ref/Tracking_Modal_1.PNG)
-![Tracking Modal](https://raw.githubusercontent.com/moh-d-m4x/MechAnim/refs/heads/main/ref/Tracking_Modal_2.PNG)
 
 ### 📤 Export & Integration
 - **SVG Export**: Export your mechanism and path as scalable vector graphics.
@@ -39,9 +38,6 @@
 
 ### Prerequisites
 - **Node.js**: v16 or higher
-- **Python**: v3.8 or higher
-- **NVIDIA GPU** (recommended): For TAPIR acceleration with CUDA 11.8+
-- **Miniconda** (Recommended for Python environment management)
 
 ### Installation
 
@@ -51,34 +47,10 @@
     cd mechanim
     ```
 
-2.  **Install Frontend Dependencies**
+2.  **Install Dependencies**
     ```bash
     npm install
     ```
-
-3.  **Setup Backend**
-    ```bash
-    cd backend
-    python -m venv venv
-    # Windows
-    venv\Scripts\activate
-    # Linux/Mac
-    # source venv/bin/activate
-    pip install -r requirements.txt
-    ```
-
-4.  **Install PyTorch (for TAPIR tracking)**
-    ```bash
-    # With CUDA support (recommended for GPU)
-    pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
-    
-    # Or CPU only (slower)
-    pip install torch torchvision
-    ```
-
-5.  **Download TAPIR Model** (automatic on first use)
-    - The BootsTAPIR checkpoint (~500MB) downloads automatically when you first enable Auto tracking.
-    - Or manually: Download from [Google Storage](https://storage.googleapis.com/dm-tapnet/bootstap/causal_bootstapir_checkpoint.pt) to `backend/models/`
 
 ### Running the Application
 
@@ -89,19 +61,11 @@ run_browser.bat
 
 **Manual Start:**
 
-1.  **Start the Backend Server**
-    ```bash
-    # In the backend directory
-    python server.py
-    ```
-    The API will be available at `http://localhost:8000`.
-
-2.  **Start the Frontend**
-    ```bash
-    # In the root directory
-    npm run dev
-    ```
-    Open `http://localhost:3000` in your browser.
+```bash
+# In the root directory
+npm run dev
+```
+Open `http://localhost:3000` in your browser.
 
 ## 📖 Usage Guide
 
@@ -116,30 +80,22 @@ run_browser.bat
 3.  **Optimize**: Click the "Optimize" button. The AI will iterate through variations to match your drawing.
 4.  **Refine**: Adjust the optimization duration or seed mechanism for better results.
 
-### Using Video Tracking
+### Using Manual Tracking
 1.  **Open Tracker**: Click the "Track Video" button in the controls.
-2.  **Upload**: Select a video file containing the motion you want to replicate.
-3.  **Enable Auto Mode**: Toggle "Auto" to use TAPIR-based tracking.
-4.  **Download Model**: First time only - download the BootsTAPIR model when prompted.
-5.  **Initialize**: Draw a rectangle around the point to track on the first frame.
-6.  **Track**: Click "Run Tracking". TAPIR tracks the point through all frames.
-7.  **Transfer**: Click "Use Path" to send the tracked motion to the main editor for optimization.
+2.  **Upload**: Select a video file or GIF containing the motion you want to replicate.
+3.  **Annotate**: 
+    - Click on the canvas to place a point.
+    - Drag points to adjust them.
+    - Use the timeline or arrow keys to move between frames.
+4.  **Refine**:
+    - Check "Smooth Path" to create a smooth curve through your points.
+    - Check "Connect Ends" if the motion is a closed loop.
+5.  **Transfer**: Click "Transfer as Drawing" to send the tracked path to the main editor for optimization.
 
 ## 🛠️ Technology Stack
 
 - **Frontend**: React 19, TypeScript, Vite, TailwindCSS, Lucide React
-- **Backend**: Python, FastAPI, Uvicorn
-- **Point Tracking**: BootsTAPIR (PyTorch) - Google DeepMind's state-of-the-art tracker
-- **Computer Vision**: OpenCV (fallback optical flow)
 - **Simulation**: Custom kinematic solvers
-
-## 🏭 Production Distribution
-
-For distributing the app without requiring users to install PyTorch:
-
-1. Export TAPIR model to ONNX format
-2. Bundle ONNX Runtime (~50-180MB) instead of PyTorch (~2.5GB)
-3. Users only need the lightweight ONNX runtime
 
 ## 📄 License
 
