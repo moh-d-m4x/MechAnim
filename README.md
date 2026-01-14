@@ -20,7 +20,7 @@
 
 ![Draw Mode](https://github.com/moh-d-m4x/MechAnim/blob/main/ref/Draw_Mode.png?raw=true)
 
-### 🧬 AI-Powered Optimization
+### 🧬 Machine Optimization
 - **Path Drawing**: Draw a desired motion path directly on the canvas.
 - **Genetic Algorithm**: Automatically evolve mechanism configurations to match your drawn path.
 - **Smart Generation**: Uses Monte Carlo search and evolutionary strategies to find the best fit.
@@ -28,7 +28,7 @@
 
 ### ✍️ Manual Motion Tracking
 - **Import Video/GIF**: Upload reference footage of motion.
-- **Manual Annotation**: Click and drag to define points on video frames.
+- **Manual Annotation**: Click to define points on video frames.
 - **Path Smoothing**: Automatically smooth your manually placed points using Catmull-Rom splines.
 - **Path Extraction**: Convert your annotated path into a target for mechanism optimization.
 - **Loop Closing**: Option to automatically connect the start and end points for cyclic motion.
@@ -36,7 +36,7 @@
 ![Tracking Modal](https://github.com/moh-d-m4x/MechAnim/blob/main/ref/Tracking_Modal_1.png?raw=true)
 ![Tracking Moda2](https://github.com/moh-d-m4x/MechAnim/blob/main/ref/Tracking_Modal_2.png?raw=true)
 
-### 📤 Export & Integration
+### 📤 Export & Integration (alpha)
 - **SVG Export**: Export your mechanism and path as scalable vector graphics.
 - **DXF Export**: Generate CAD-ready files for laser cutting or 3D modeling.
 - **Presets**: Save and load your favorite mechanism configurations.
@@ -84,16 +84,15 @@ Open `http://localhost:3000` in your browser.
 ### Optimizing for a Path
 1.  **Draw**: Enable "Draw Mode" and sketch a loop or curve on the canvas.
 2.  **Select**: Click on the mechanism you want to fit to the path.
-3.  **Optimize**: Click the "Optimize" button. The AI will iterate through variations to match your drawing.
+3.  **Optimize**: Click the "Optimize" button. to iterate through variations to match your drawing.
 4.  **Refine**: Adjust the optimization duration or seed mechanism for better results.
 
 ### Using Manual Tracking
 1.  **Open Tracker**: Click the "Track Video" button in the controls.
 2.  **Upload**: Select a video file or GIF containing the motion you want to replicate.
 3.  **Annotate**: 
-    - Click on the canvas to place a point.
+    - Click on the canvas to place a points.
     - Drag points to adjust them.
-    - Use the timeline or arrow keys to move between frames.
 4.  **Refine**:
     - Check "Smooth Path" to create a smooth curve through your points.
     - Check "Connect Ends" if the motion is a closed loop.
