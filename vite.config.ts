@@ -4,8 +4,11 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
+  // Use relative path for Tauri builds, absolute for web deployment
+  const isTauri = process.env.TAURI_PLATFORM !== undefined;
+
   return {
-    base: '/MechAnim/',
+    base: isTauri ? './' : '/MechAnim/',
     server: {
       port: 1420,
       strictPort: true,
