@@ -11,6 +11,7 @@ interface Preset {
 export interface OptimizationOptions {
     forcedType?: MechanismType;
     excludeCurrent?: boolean;
+    testAllTypes?: boolean;
     seedMechanism?: MechanismConfig;
 }
 
@@ -299,8 +300,8 @@ export const Controls: React.FC<ControlsProps> = ({
     const handleChangePreset = () => {
         if (!selectedId) return;
         setOptimizingTarget('shape');
-        // Find NEW shape (exclude current)
-        onOptimize({ excludeCurrent: true });
+        // Test ALL mechanism types and find the best one
+        onOptimize({ testAllTypes: true });
     };
 
     const handleOptimizeWithPreset = (presetConf: GlobalConfig) => {
@@ -410,8 +411,8 @@ export const Controls: React.FC<ControlsProps> = ({
                                     <Component size={14} />
                                 </div>
                                 <div>
-                                    <div className="block">Change Mechanism Type</div>
-                                    <div className="text-[10px] font-normal text-slate-400">Find best fitting type automatically</div>
+                                    <div className="block">Find Best Mechanism</div>
+                                    <div className="text-[10px] font-normal text-slate-400">Test all types and pick the best match</div>
                                 </div>
                             </button>
 

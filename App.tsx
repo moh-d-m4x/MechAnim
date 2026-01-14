@@ -135,6 +135,105 @@ const App: React.FC = () => {
         document.body.removeChild(link);
     };
 
+    const runSingleTypeOptimization = async (
+        mechType: MechanismType,
+        targetPath: Point[],
+        seedMech: MechanismConfig,
+        timePerType: number = 0 // milliseconds, 0 = use default generations
+    ): Promise<{ type: MechanismType; config: MechanismConfig; score: number } | null> => {
+        // Scale parameters based on time budget (Option 1: Duration scaling)
+        // Base: 800 candidates at 0 duration, scale up with more time
+        const BASE_CANDIDATES = 800;
+        const BASE_POPULATION = 60;
+        const DEFAULT_GENERATIONS = 80;
+
+        // Scale candidates with duration: more time = more exploration
+        // At 2s per type: 800, at 6s: 1600, at 12s: 2400
+        const scaleFactor = timePerType > 0 ? Math.max(1, timePerType / 2000) : 1;
+        const PRE_COMPUTE_SIZE = Math.min(3000, Math.floor(BASE_CANDIDATES * scaleFactor));
+        const POPULATION_SIZE = Math.min(100, Math.floor(BASE_POPULATION * Math.sqrt(scaleFactor)));
+
+        // Generate candidates for this specific type
+        let candidates: MechanismConfig[] = [];
+        for (let i = 0; i < PRE_COMPUTE_SIZE; i++) {
+            candidates.push(generateSmartConfig(targetPath, mechType, undefined));
+        }
+
+        // Score and sort candidates
+        const scoredCandidates = candidates.map(m => ({
+            mech: m,
+            score: evaluateFitness(m, targetPath)
+        }));
+
+        const validCandidates = scoredCandidates.filter(s => s.score < 1e8);
+        const poolSource = validCandidates.length > 0 ? validCandidates : scoredCandidates;
+        poolSource.sort((a, b) => a.score - b.score);
+
+        let population: MechanismConfig[] = poolSource.slice(0, POPULATION_SIZE).map(s => s.mech);
+        while (population.length < POPULATION_SIZE) {
+            population.push(generateSmartConfig(targetPath, mechType, undefined));
+        }
+
+        let globalBest = population[0];
+        let globalBestScore = evaluateFitness(globalBest, targetPath);
+
+        // Evolutionary optimization - time-based or generation-based
+        const startTime = Date.now();
+        const isTimeBound = timePerType > 0;
+        let generation = 0;
+
+        while (true) {
+            if (isTimeBound) {
+                if (Date.now() - startTime >= timePerType) break;
+            } else {
+                if (generation >= DEFAULT_GENERATIONS) break;
+            }
+
+            const scored = population.map(m => ({
+                mech: m,
+                score: evaluateFitness(m, targetPath)
+            }));
+            scored.sort((a, b) => a.score - b.score);
+
+            if (scored[0].score < globalBestScore) {
+                globalBestScore = scored[0].score;
+                globalBest = scored[0].mech;
+            }
+
+            const nextGen: MechanismConfig[] = [];
+            for (let i = 0; i < POPULATION_SIZE * 0.15; i++) nextGen.push(scored[i].mech);
+
+            const survivors = scored.slice(0, POPULATION_SIZE / 2);
+            while (nextGen.length < POPULATION_SIZE) {
+                if (Math.random() < 0.10) {
+                    nextGen.push(generateSmartConfig(targetPath, mechType, undefined));
+                } else {
+                    const parent = survivors[Math.floor(Math.random() * survivors.length)].mech;
+                    let progress = 0;
+                    if (isTimeBound) progress = (Date.now() - startTime) / timePerType;
+                    else progress = generation / DEFAULT_GENERATIONS;
+                    const temperature = Math.max(0.05, 1.0 - Math.pow(progress, 0.5));
+                    nextGen.push(mutateConfig(parent, temperature, true)); // fixedType = true
+                }
+            }
+            population = nextGen;
+            generation++;
+
+            // Allow UI updates
+            if (generation % 10 === 0) {
+                await new Promise(r => setTimeout(r, 5));
+            }
+        }
+
+        // Local refinement for 5-bar (deeper refinement)
+        if (globalBest.type === '5bar') {
+            globalBest = localRefine5bar(globalBest, targetPath, 40);
+            globalBestScore = evaluateFitness(globalBest, targetPath);
+        }
+
+        return { type: mechType, config: globalBest, score: globalBestScore };
+    };
+
     const runOptimization = async (options: OptimizationOptions = {}) => {
         if (userPath.length < 3) {
             alert("Please draw a path first!");
@@ -148,7 +247,7 @@ const App: React.FC = () => {
         setIsOptimizing(true);
         setIsPlaying(false);
 
-        const { forcedType, excludeCurrent, seedMechanism } = options;
+        const { forcedType, excludeCurrent, testAllTypes, seedMechanism } = options;
         const targetMechIndex = config.mechanisms.findIndex(m => m.id === selectedId);
         if (targetMechIndex === -1) {
             setIsOptimizing(false);
@@ -156,12 +255,55 @@ const App: React.FC = () => {
         }
 
         const seedMech = config.mechanisms[targetMechIndex];
+
+        // If testAllTypes is enabled, run optimization for each type IN PARALLEL and pick the best
+        if (testAllTypes) {
+            const allTypes: MechanismType[] = ['4bar', 'piston', 'yoke', 'quick-return', '5bar'];
+
+            // Each type gets the FULL duration (running in parallel means total time ≈ duration)
+            const totalTimeMs = optDuration * 1000;
+            const timePerType = totalTimeMs; // Full duration for each type since they run in parallel
+
+            // Option 3: Run all type optimizations in PARALLEL using Promise.all
+            const optimizationPromises = allTypes.map(mechType =>
+                runSingleTypeOptimization(mechType, userPath, seedMech, timePerType)
+            );
+
+            // Wait for all parallel optimizations to complete
+            const results = await Promise.all(optimizationPromises);
+
+            // Filter out nulls and sort by score
+            const typeResults = results.filter((r): r is { type: MechanismType; config: MechanismConfig; score: number } => r !== null);
+            typeResults.sort((a, b) => a.score - b.score);
+
+            if (typeResults.length > 0) {
+                const bestResult = typeResults[0];
+                setConfig(prev => ({
+                    ...prev,
+                    mechanisms: prev.mechanisms.map((m, i) =>
+                        i === targetMechIndex
+                            ? { ...bestResult.config, id: seedMech.id, color: seedMech.color }
+                            : m
+                    )
+                }));
+            }
+
+            setIsOptimizing(false);
+            setIsPlaying(true);
+            return;
+        }
+
         const excludedType = excludeCurrent ? seedMech.type : undefined;
         const isTypeMismatch = forcedType && forcedType !== seedMech.type;
 
         // --- PRE-OPTIMIZATION: MONTE CARLO SEARCH ---
-        const PRE_COMPUTE_SIZE = 2000;
-        const POPULATION_SIZE = 100;
+        // Option 1: Scale candidates with duration for better exploration
+        const BASE_COMPUTE_SIZE = 2000;
+        const BASE_POPULATION = 100;
+        const timeLimitMs = optDuration * 1000;
+        const scaleFactor = timeLimitMs > 0 ? Math.max(1, timeLimitMs / 5000) : 1; // 5s baseline
+        const PRE_COMPUTE_SIZE = Math.min(5000, Math.floor(BASE_COMPUTE_SIZE * scaleFactor));
+        const POPULATION_SIZE = Math.min(150, Math.floor(BASE_POPULATION * Math.sqrt(scaleFactor)));
 
         let initialCandidates: MechanismConfig[] = [];
 
